@@ -1,0 +1,10 @@
+jax
+jaxlib
+flax
+optax
+poke-env
+kaggle
+huggingface_hub
+requests
+numpy
+scipy

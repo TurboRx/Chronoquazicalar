@@ -5,6 +5,8 @@
 *.token
 *.key
 .gitconfig
+.kaggle/
+logs/
 
 # Model checkpoints & large binary artifacts (>100MB limit safety)
 checkpoints/
@@ -24,6 +26,8 @@ dist/
 data/raw_replays/
 data/processed/
 *.log
+training/engine/
+training/models/
 
 # Python cache & build
 __pycache__/

@@ -1,0 +1,13 @@
+{
+  "id": "turborx/project-chronos-ppo-self-play-training",
+  "title": "Project Chronos PPO Self Play Training",
+  "code_file": "selfplay_ppo.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "competition_sources": [],
+  "kernel_sources": []
+}

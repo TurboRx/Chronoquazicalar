@@ -1,7 +1,5 @@
 """
-scripts/deploy_hf.py
-Phase 7: Programmatic upload of Project Chronos trained model artifacts,
-mechanics tables, and configurations to a strictly private Hugging Face repository.
+Uploads model checkpoints, mechanics tables, and configurations to Hugging Face.
 """
 
 import argparse
@@ -19,43 +17,24 @@ def deploy_to_huggingface(
     config_path: Optional[Path] = None,
     token: Optional[str] = None,
 ) -> bool:
-    """
-    Creates or updates a private Hugging Face Model repository
-    and uploads checkpoint weights and configs.
-    """
-    print(f"\n=======================================================")
-    print(f"Project Chronos: Phase 7 Hugging Face Private Deployment")
-    print(f"=======================================================")
-    print(f"Target Repo: {repo_id}")
-    print(f"Enforcing: private=True (Strictly Private)")
-
     hf_token = token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
     if not hf_token:
-        print("[!] HF_TOKEN not found in environment or arguments. Cannot upload.")
+        print("Error: HF_TOKEN not found in environment or arguments")
         return False
 
     api = HfApi(token=hf_token)
 
     try:
-        # 1. Create strictly private repository
-        print(f"Creating/verifying private repository: {repo_id}...")
         api.create_repo(repo_id=repo_id, private=True, exist_ok=True, repo_type="model")
-        print(f"[✓] Private repository verified: https://huggingface.co/{repo_id}")
 
-        # 2. Upload Checkpoint
         if checkpoint_path.exists():
-            print(f"Uploading checkpoint {checkpoint_path.name}...")
             api.upload_file(
                 path_or_fileobj=str(checkpoint_path),
                 path_in_repo=checkpoint_path.name,
                 repo_id=repo_id,
                 repo_type="model",
             )
-            print(f"[✓] Checkpoint uploaded successfully.")
-        else:
-            print(f"[!] Warning: Checkpoint {checkpoint_path} does not exist.")
 
-        # 3. Upload Architecture Config
         model_config = {
             "model_type": "chronos_transformer",
             "d_model": 256,
@@ -76,9 +55,7 @@ def deploy_to_huggingface(
             repo_id=repo_id,
             repo_type="model",
         )
-        print(f"[✓] Model config uploaded.")
 
-        # 4. Upload Mechanics Data Tables
         mechanics_path = Path(__file__).resolve().parent.parent / "engine" / "data" / "mechanics_tables.npz"
         if mechanics_path.exists():
             api.upload_file(
@@ -87,21 +64,52 @@ def deploy_to_huggingface(
                 repo_id=repo_id,
                 repo_type="model",
             )
-            print(f"[✓] Mechanics tables uploaded.")
 
-        print(f"\n[✓] All artifacts successfully deployed to private repo https://huggingface.co/{repo_id}")
+        readme_content = f"""---
+license: mit
+pipeline_tag: reinforcement-learning
+tags:
+- pokemon-showdown
+- jax
+- reinforcement-learning
+---
+
+# Chronos (Gen 9 Random Battles)
+
+Transformer policy and value network (~8.5M parameters) for Pokémon Showdown Gen 9 Random Battles.
+
+## Architecture
+- Architecture: Non-Causal Transformer Encoder
+- Dimension (`d_model`): 256
+- Attention Heads: 8
+- Encoder Layers: 6
+- Feed-Forward (`d_ff`): 1024
+- Action Space: 9 discrete actions (4 moves + 5 switches)
+"""
+        readme_file = checkpoint_path.parent / "README.md"
+        with open(readme_file, "w") as f:
+            f.write(readme_content)
+
+        api.upload_file(
+            path_or_fileobj=str(readme_file),
+            path_in_repo="README.md",
+            repo_id=repo_id,
+            repo_type="model",
+        )
+
+        print(f"Deployed artifacts to https://huggingface.co/{repo_id}")
         return True
 
     except Exception as e:
-        print(f"[✗] Error during Hugging Face deployment: {e}")
+        print(f"Deployment error: {e}")
         return False
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Deploy Chronos model to private HF repo")
-    parser.add_argument("--repo-id", type=str, default="chronos-gen9-randbats", help="Hugging Face repo ID (e.g. username/repo)")
-    parser.add_argument("--checkpoint", type=str, default="checkpoints/bc_checkpoint_latest.pkl", help="Path to checkpoint file")
-    parser.add_argument("--token", type=str, help="Hugging Face write token")
+    parser = argparse.ArgumentParser(description="Deploy checkpoint to Hugging Face")
+    parser.add_argument("--repo-id", type=str, default="chronos-gen9-randbats", help="Repo ID (e.g. username/repo)")
+    parser.add_argument("--checkpoint", type=str, default="checkpoints/bc_checkpoint_latest.pkl", help="Checkpoint path")
+    parser.add_argument("--token", type=str, help="Hugging Face token")
     args = parser.parse_args()
 
     ckpt_path = Path(args.checkpoint)

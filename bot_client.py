@@ -1,12 +1,6 @@
 """
-bot_client.py
-Phase 7: Project Chronos Ladder Bot Client.
-Wraps the trained Transformer Policy, exact damage heuristic, and pUCT search
-in poke-env's Player interface.
-Supports:
-- Local test battles against baseline bots (RandomPlayer, SimpleHeuristicsPlayer)
-- Live ladder queuing on play.pokemonshowdown.com (gen9randombattle)
-- Win rate, Elo, and battle metric tracking
+Pokémon Showdown player client using poke-env.
+Wraps the Transformer policy, heuristic KO checks, and pUCT search.
 """
 
 import argparse
@@ -62,10 +56,6 @@ from search.puct_search import PUCTSearchEngine
 
 
 class ChronosPlayer(Player):
-    """
-    Grandmaster AI Player for Gen 9 Random Battles.
-    """
-
     def __init__(
         self,
         checkpoint_path: Optional[Path] = None,
@@ -84,7 +74,6 @@ class ChronosPlayer(Player):
             **kwargs,
         )
 
-        # 1. Load Mappings
         mappings_path = Path(__file__).resolve().parent / "engine" / "data" / "id_mappings.json"
         if mappings_path.exists():
             with open(mappings_path, "r") as f:
@@ -97,11 +86,9 @@ class ChronosPlayer(Player):
             self.move_to_idx = {}
             self.type_to_idx = {}
 
-        # 2. Initialize Model & Weights
         self.model = ChronosTransformer()
         rng = jax.random.PRNGKey(42)
 
-        # Create dummy state to initialize model parameters
         dummy_team = jnp.array([950, 230, 150, 1380, 450, 1200], dtype=jnp.int32)
         dummy_moves = jnp.full((6, 4), 100, dtype=jnp.int32)
         dummy_state = init_battle(rng, dummy_team, dummy_team, dummy_moves, dummy_moves)
@@ -109,13 +96,10 @@ class ChronosPlayer(Player):
         batched_sample = {k: v[None, ...] for k, v in sample_inp.items()}
         self.params = self.model.init(rng, batched_sample)
 
-        # Load trained weights if provided
         if checkpoint_path and checkpoint_path.exists():
-            print(f"[✓] Loading Chronos weights from {checkpoint_path}...")
             with open(checkpoint_path, "rb") as f:
                 self.params = pickle.load(f)
 
-        # 3. Initialize Search Engine
         self.searcher = PUCTSearchEngine(
             model=self.model,
             params=self.params,
@@ -124,37 +108,29 @@ class ChronosPlayer(Player):
             default_time_limit_sec=search_time_budget,
         )
 
-        # Pre-warmup JIT
         self._warmup_jit(dummy_state)
-        print("[✓] Project Chronos player initialized and JIT compiled.")
 
     def _warmup_jit(self, dummy_state: BattleState) -> None:
-        """Warms up XLA compilation so live turns experience sub-second latency."""
         try:
             _ = self.searcher.evaluate_state(dummy_state)
             _ = self.searcher.search(dummy_state, max_simulations=1, time_limit_sec=10.0)
-        except Exception as e:
-            print(f"[!] JIT warmup notice: {e}")
+        except Exception:
+            pass
 
     def _battle_to_battle_state(self, battle: Battle) -> BattleState:
-        """Converts poke-env Battle object into JAX BattleState PyTree."""
-        # Active Pokémon P1
         act_p1 = battle.active_pokemon
         act_sp_id_1 = self.species_to_idx.get(act_p1.species if act_p1 else "pikachu", 950)
         act_hp_1 = act_p1.current_hp_fraction if act_p1 else 1.0
 
-        # Active Pokémon P2
         act_p2 = battle.opponent_active_pokemon
         act_sp_id_2 = self.species_to_idx.get(act_p2.species if act_p2 else "charizard", 230)
         act_hp_2 = act_p2.current_hp_fraction if act_p2 else 1.0
 
-        # Moves P1
         p1_mvs = [0, 0, 0, 0]
         if act_p1 and act_p1.moves:
             for idx, m in enumerate(list(act_p1.moves.values())[:4]):
                 p1_mvs[idx] = self.move_to_idx.get(m.id, 100)
 
-        # Bench P1
         p1_bench = [act_sp_id_1]
         p1_bench_hp = [act_hp_1]
         p1_alive = [act_hp_1 > 0]
@@ -170,7 +146,6 @@ class ChronosPlayer(Player):
             p1_bench_hp.append(0.0)
             p1_alive.append(False)
 
-        # Bench P2
         p2_bench = [act_sp_id_2]
         p2_bench_hp = [act_hp_2]
         p2_alive = [act_hp_2 > 0]
@@ -186,7 +161,6 @@ class ChronosPlayer(Player):
             p2_bench_hp.append(0.0)
             p2_alive.append(False)
 
-        # Boosts (-6 to +6)
         boosts_p1 = [0] * 7
         if act_p1 and act_p1.boosts:
             for i, stat in enumerate(["atk", "def", "spa", "spd", "spe", "accuracy", "evasion"]):
@@ -197,7 +171,6 @@ class ChronosPlayer(Player):
             for i, stat in enumerate(["atk", "def", "spa", "spd", "spe", "accuracy", "evasion"]):
                 boosts_p2[i] = act_p2.boosts.get(stat, 0)
 
-        # Weather
         weather = WEATHER_NONE
         if battle.weather:
             w_str = list(battle.weather.keys())[0].name
@@ -210,7 +183,6 @@ class ChronosPlayer(Player):
             elif "SNOW" in w_str:
                 weather = WEATHER_SNOW
 
-        # Construct BattleState
         rng = jax.random.PRNGKey(battle.turn)
         moves_tensor = jnp.array([[p1_mvs, [100, 100, 100, 100]] * 3], dtype=jnp.int32).reshape(2, 6, 4)
         base_state = init_battle(
@@ -229,53 +201,33 @@ class ChronosPlayer(Player):
         )
 
     def choose_move(self, battle: Battle) -> BattleOrder:
-        """
-        Selects the best competitive move using exact damage heuristics
-        and pUCT lookahead search with CFR regret matching.
-        """
-        # Convert battle to JAX tensor state
         state = self._battle_to_battle_state(battle)
 
-        # 1. Exact Damage & Guaranteed KO Check
         has_ko, ko_action = check_guaranteed_ko(state, player_idx=0)
         if bool(has_ko) and int(ko_action) >= 0:
             ko_slot = int(ko_action)
-            # Find matching available move
             if battle.available_moves and ko_slot < len(battle.available_moves):
-                best_move = battle.available_moves[ko_slot]
-                return self.create_order(best_move)
+                return self.create_order(battle.available_moves[ko_slot])
 
-        # 2. pUCT Search with Strict Time Budget
-        chosen_act, strat, stats = self.searcher.search(
+        chosen_act, _, _ = self.searcher.search(
             state,
             time_limit_sec=2.0,
             max_simulations=100,
             temperature=0.3,
         )
 
-        # 3. Map chosen action to Showdown BattleOrder
-        # Actions 0..3: Moves
         if chosen_act < 4 and battle.available_moves:
-            # Pick available move closest to chosen index
             slot = min(chosen_act, len(battle.available_moves) - 1)
             return self.create_order(battle.available_moves[slot])
-
-        # Actions 4..8: Switches
         elif chosen_act >= 4 and battle.available_switches:
             switch_slot = chosen_act - 4
             slot = min(switch_slot, len(battle.available_switches) - 1)
             return self.create_order(battle.available_switches[slot])
 
-        # Fallback to random legal move
         return self.choose_random_move(battle)
 
 
 async def run_local_battles(num_battles: int = 5, checkpoint_path: Optional[Path] = None):
-    """Runs local test battles against baseline bots to verify integration."""
-    print(f"\n=======================================================")
-    print(f"Project Chronos: Testing {num_battles} Local Battles")
-    print(f"=======================================================")
-
     chronos = ChronosPlayer(
         checkpoint_path=checkpoint_path,
         search_time_budget=1.0,
@@ -287,12 +239,10 @@ async def run_local_battles(num_battles: int = 5, checkpoint_path: Optional[Path
         max_concurrent_battles=1,
     )
 
-    print(f"Battling Chronos against SimpleHeuristicsPlayer ({num_battles} battles)...")
     await chronos.battle_against(opponent, n_battles=num_battles)
 
-    print("\n--- Battle Results ---")
-    print(f"Chronos Wins: {chronos.n_won_battles}/{num_battles} ({chronos.n_won_battles / num_battles * 100:.1f}%)")
-    print(f"Opponent Wins: {opponent.n_won_battles}/{num_battles}")
+    print(f"Chronos: {chronos.n_won_battles}/{num_battles} wins ({chronos.n_won_battles / num_battles * 100:.1f}%)")
+    print(f"Opponent: {opponent.n_won_battles}/{num_battles} wins")
 
 
 async def run_ladder(
@@ -301,11 +251,6 @@ async def run_ladder(
     checkpoint_path: Optional[Path] = None,
     num_battles: int = 10,
 ):
-    """Connects to live Showdown server and queues for ladder games."""
-    print(f"\n=======================================================")
-    print(f"Project Chronos: Live Ladder Mode (play.pokemonshowdown.com)")
-    print(f"=======================================================")
-
     account = AccountConfiguration(username, password)
     chronos = ChronosPlayer(
         checkpoint_path=checkpoint_path,
@@ -315,26 +260,25 @@ async def run_ladder(
         max_concurrent_battles=1,
     )
 
-    print(f"Queuing for {num_battles} gen9randombattle ladder games as '{username}'...")
     await chronos.ladder(num_battles)
-    print(f"[✓] Ladder session finished. Wins: {chronos.n_won_battles}/{num_battles}")
+    print(f"Completed {num_battles} games. Wins: {chronos.n_won_battles}/{num_battles}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Project Chronos Pokémon Showdown Bot")
-    parser.add_argument("--test-local", action="store_true", help="Run local test battles against baseline bot")
-    parser.add_argument("--battles", type=int, default=5, help="Number of battles to play")
-    parser.add_argument("--checkpoint", type=str, default="checkpoints/bc_checkpoint_latest.pkl", help="Model checkpoint path")
-    parser.add_argument("--ladder", action="store_true", help="Queue on live Showdown ladder")
-    parser.add_argument("--username", type=str, help="Showdown username")
-    parser.add_argument("--password", type=str, help="Showdown password")
+    parser = argparse.ArgumentParser(description="Pokémon Showdown bot client")
+    parser.add_argument("--test-local", action="store_true", help="Run local battles against baseline player")
+    parser.add_argument("--battles", type=int, default=5, help="Number of battles")
+    parser.add_argument("--checkpoint", type=str, default="checkpoints/bc_checkpoint_latest.pkl", help="Path to checkpoint")
+    parser.add_argument("--ladder", action="store_true", help="Queue on public ladder")
+    parser.add_argument("--username", type=str, help="Showdown account username")
+    parser.add_argument("--password", type=str, help="Showdown account password")
     args = parser.parse_args()
 
     ckpt_path = Path(args.checkpoint) if args.checkpoint else None
 
     if args.ladder:
         if not args.username or not args.password:
-            print("[✗] Error: --username and --password are required for ladder mode.")
+            print("Error: --username and --password are required for ladder mode")
             return
         asyncio.run(run_ladder(args.username, args.password, checkpoint_path=ckpt_path, num_battles=args.battles))
     else:

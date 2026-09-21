@@ -1,7 +1,5 @@
 """
-training/pretrain_bc.py
-Phase 5: Supervised pretraining (Behavioral Cloning) with Cross-Entropy Loss
-and label smoothing (0.1) on Gen 9 Randbats state-action pairs.
+Supervised Behavioral Cloning for policy initialization.
 """
 
 import os
@@ -19,17 +17,14 @@ from models.transformer_policy import ChronosTransformer
 
 
 def load_dataset(data_path: Path) -> Dict[str, np.ndarray]:
-    """Loads dataset from npz."""
     if not data_path.exists():
         from data.replay_scraper import generate_synthetic_randbats_demonstrations, save_dataset
-        print(f"Dataset {data_path} not found. Generating fresh demonstration dataset...")
         dataset = generate_synthetic_randbats_demonstrations(num_samples=2500)
         save_dataset(dataset, data_path)
     return dict(np.load(data_path))
 
 
 def smooth_labels(labels: jnp.ndarray, num_classes: int = 9, smoothing: float = 0.1) -> jnp.ndarray:
-    """Applies label smoothing: (1 - eps) * one_hot + eps / num_classes."""
     one_hot = jax.nn.one_hot(labels, num_classes)
     return (1.0 - smoothing) * one_hot + (smoothing / num_classes)
 
@@ -42,21 +37,11 @@ def train_bc(
     learning_rate: float = 3e-4,
     seed: int = 42,
 ) -> Dict:
-    """
-    Trains ChronosTransformer policy head using Cross-Entropy with label smoothing (0.1)
-    and value head using MSE loss.
-    """
-    print(f"\n=======================================================")
-    print(f"Project Chronos: Phase 5 Supervised Pretraining (BC)")
-    print(f"=======================================================")
-
     rng = jax.random.PRNGKey(seed)
     data = load_dataset(data_path)
     num_samples = len(data["actions"])
-    print(f"Loaded {num_samples} training samples.")
 
     model = ChronosTransformer()
-    # Initialize model with first sample
     sample_inputs = {k: jnp.array(data[k][:1]) for k in [
         "act_species", "act_types", "act_continuous",
         "bench_species_p1", "bench_cont_p1", "bench_species_p2", "bench_cont_p2",
@@ -66,11 +51,9 @@ def train_bc(
     rng, init_key = jax.random.split(rng)
     params = model.init(init_key, sample_inputs)
 
-    # Setup Optax AdamW optimizer
     optimizer = optax.adamw(learning_rate=learning_rate, weight_decay=1e-4)
     opt_state = optimizer.init(params)
 
-    # Loss function
     def compute_loss(p, batch_inp, batch_act, batch_val):
         logits, _, pred_val = model.apply(p, batch_inp, deterministic=False)
         targets = smooth_labels(batch_act, num_classes=9, smoothing=0.1)
@@ -90,7 +73,6 @@ def train_bc(
         p = optax.apply_updates(p, updates)
         return p, opt_s, ce_loss, val_loss, acc
 
-    # Training Loop
     indices = np.arange(num_samples)
     for epoch in range(1, epochs + 1):
         np.random.shuffle(indices)
@@ -114,18 +96,16 @@ def train_bc(
         elapsed = time.perf_counter() - start_t
         print(
             f"Epoch {epoch:2d}/{epochs:2d} | "
-            f"CE Loss: {epoch_ce / num_batches:.4f} | "
+            f"Loss: {epoch_ce / num_batches:.4f} | "
             f"Val Loss: {epoch_val / num_batches:.4f} | "
-            f"Policy Acc: {epoch_acc / num_batches * 100:.1f}% | "
+            f"Accuracy: {epoch_acc / num_batches * 100:.1f}% | "
             f"Time: {elapsed:.2f}s"
         )
 
-    # Save Checkpoint
     output_checkpoint_dir.mkdir(parents=True, exist_ok=True)
     ckpt_path = output_checkpoint_dir / "bc_checkpoint_latest.pkl"
     with open(ckpt_path, "wb") as f:
         pickle.dump(params, f)
-    print(f"[✓] Behavioral cloning model saved to {ckpt_path}")
 
     return params
 
