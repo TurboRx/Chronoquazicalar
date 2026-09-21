@@ -23,8 +23,8 @@ CHECKPOINTS_DIR.mkdir(parents=True, exist_ok=True)
 
 KAGGLE_KERNEL_SLUG = "turborx/project-chronos-ppo-self-play-training"
 HF_REPO_ID = "TurboRx/chronos-randbats"
-HF_TOKEN = os.environ.get("HF_TOKEN", "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")
-KAGGLE_TOKEN = os.environ.get("KAGGLE_API_TOKEN", "KGAT_ae6ea9b112f250c19fc160f4ec2e511f")
+HF_TOKEN = os.environ.get("HF_TOKEN")
+KAGGLE_TOKEN = os.environ.get("KAGGLE_API_TOKEN")
 POLL_INTERVAL_SEC = 300
 
 

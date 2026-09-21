@@ -12,8 +12,13 @@ Features:
 # Self-contained bundle bootstrap for Kaggle / Cloud execution
 import base64
 import io
+import json
 import os
+import pickle
+import shutil
+import subprocess
 import sys
+import time
 import zipfile
 from pathlib import Path
 
@@ -79,27 +84,145 @@ class RolloutBuffer(NamedTuple):
     valid_masks: jnp.ndarray
 
 
-def prepare_kaggle_kernel_metadata(kernel_dir: Path, kernel_slug: str = "project-chronos-selfplay-ppo") -> None:
-    """
-    Creates kernel-metadata.json configured for private execution with GPU/TPU enabled.
-    """
+HF_REPO_ID = "TurboRx/chronos-randbats"
+HF_TOKEN = os.environ.get("HF_TOKEN")
+KAGGLE_API_TOKEN = os.environ.get("KAGGLE_API_TOKEN")
+MAX_SESSION_DURATION_SEC = 11 * 3600 + 15 * 60  # 11 hours 15 minutes
+
+
+def prepare_kaggle_kernel_metadata(kernel_dir: Path, kernel_slug: str = "turborx/project-chronos-ppo-self-play-training") -> None:
     metadata = {
         "id": f"{kernel_slug}",
-        "title": "Project Chronos PPO Self-Play Training",
-        "code_file": "training/selfplay_ppo.py",
+        "title": "Project Chronos PPO Self Play Training",
+        "code_file": "selfplay_ppo.py",
         "language": "python",
         "kernel_type": "script",
-        "is_private": True,  # Strictly PRIVATE
-        "enable_gpu": True,   # GPU accelerator enabled
+        "is_private": True,
+        "enable_gpu": True,
         "enable_internet": True,
-        "dataset_sources": ["project-chronos-randbats-data"],
+        "dataset_sources": [],
         "competition_sources": [],
         "kernel_sources": [],
     }
     meta_file = kernel_dir / "kernel-metadata.json"
     with open(meta_file, "w") as f:
         json.dump(metadata, f, indent=2)
-    print(f"[✓] Created private Kaggle kernel configuration at {meta_file}")
+
+
+def sync_to_huggingface(ckpt_file: Path, metrics: dict) -> None:
+    try:
+        from huggingface_hub import HfApi
+        api = HfApi(token=HF_TOKEN)
+        api.upload_file(
+            path_or_fileobj=str(ckpt_file),
+            path_in_repo="checkpoint_latest.pkl",
+            repo_id=HF_REPO_ID,
+            repo_type="model",
+        )
+        metrics_path = ckpt_file.parent / "metrics.json"
+        with open(metrics_path, "w") as mf:
+            json.dump(metrics, mf, indent=2)
+        api.upload_file(
+            path_or_fileobj=str(metrics_path),
+            path_in_repo="metrics.json",
+            repo_id=HF_REPO_ID,
+            repo_type="model",
+        )
+        print(f"[HF Sync] Checkpoint and metrics backed up to {HF_REPO_ID}")
+    except Exception as e:
+        print(f"[HF Sync] Warning: Could not upload to Hugging Face: {e}")
+
+
+def load_initial_params(checkpoint_dir: Path, fallback_params: dict) -> dict:
+    try:
+        from huggingface_hub import hf_hub_download
+        cache_dir = checkpoint_dir / "hf_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        local_path = hf_hub_download(
+            repo_id=HF_REPO_ID,
+            filename="checkpoint_latest.pkl",
+            token=HF_TOKEN,
+            cache_dir=str(cache_dir),
+        )
+        with open(local_path, "rb") as f:
+            params = pickle.load(f)
+        print(f"[Init] Loaded latest PPO checkpoint from Hugging Face ({HF_REPO_ID})")
+        return params
+    except Exception as e:
+        print(f"[Init] No PPO checkpoint on Hugging Face: {e}")
+
+    local_latest = checkpoint_dir / "checkpoint_latest.pkl"
+    if local_latest.exists():
+        with open(local_latest, "rb") as f:
+            print(f"[Init] Loaded local checkpoint: {local_latest}")
+            return pickle.load(f)
+
+    try:
+        from huggingface_hub import hf_hub_download
+        cache_dir = checkpoint_dir / "hf_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        local_path = hf_hub_download(
+            repo_id=HF_REPO_ID,
+            filename="bc_checkpoint_latest.pkl",
+            token=HF_TOKEN,
+            cache_dir=str(cache_dir),
+        )
+        with open(local_path, "rb") as f:
+            params = pickle.load(f)
+        print(f"[Init] Loaded BC baseline checkpoint from Hugging Face ({HF_REPO_ID})")
+        return params
+    except Exception as e:
+        print(f"[Init] No BC checkpoint on Hugging Face: {e}")
+
+    bc_ckpt = checkpoint_dir / "bc_checkpoint_latest.pkl"
+    if bc_ckpt.exists():
+        with open(bc_ckpt, "rb") as f:
+            print(f"[Init] Loaded local BC checkpoint: {bc_ckpt}")
+            return pickle.load(f)
+
+    print("[Init] Using freshly initialized model parameters.")
+    return fallback_params
+
+
+def trigger_next_kaggle_kernel() -> bool:
+    try:
+        work_dir = Path("/kaggle/working") if os.path.exists("/kaggle/working") else Path(".")
+        meta_file = work_dir / "kernel-metadata.json"
+        metadata = {
+            "id": "turborx/project-chronos-ppo-self-play-training",
+            "title": "Project Chronos PPO Self Play Training",
+            "code_file": "selfplay_ppo.py",
+            "language": "python",
+            "kernel_type": "script",
+            "is_private": True,
+            "enable_gpu": True,
+            "enable_internet": True,
+            "dataset_sources": [],
+            "competition_sources": [],
+            "kernel_sources": [],
+        }
+        with open(meta_file, "w") as f:
+            json.dump(metadata, f, indent=2)
+
+        script_target = work_dir / "selfplay_ppo.py"
+        current_script = Path(__file__).resolve()
+        if script_target.resolve() != current_script:
+            shutil.copy2(current_script, script_target)
+
+        env = os.environ.copy()
+        env["KAGGLE_API_TOKEN"] = KAGGLE_API_TOKEN
+        res = subprocess.run(
+            ["kaggle", "kernels", "push", "-p", str(work_dir)],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=60,
+        )
+        print(f"[Auto-Handoff] Next Kaggle session queued: {res.stdout.strip()} {res.stderr.strip()}")
+        return res.returncode == 0
+    except Exception as e:
+        print(f"[Auto-Handoff] Error triggering next session: {e}")
+        return False
 
 
 def compute_gae(
@@ -165,14 +288,7 @@ def train_ppo_selfplay(
     sample_inp = batch_state_to_model_inputs(sample_state, 0)
     rng, init_key = jax.random.split(rng)
     params = model.init(init_key, sample_inp)
-
-    if latest_ckpt_file.exists():
-        with open(latest_ckpt_file, "rb") as f:
-            params = pickle.load(f)
-    elif (checkpoint_dir / "bc_checkpoint_latest.pkl").exists():
-        bc_ckpt = checkpoint_dir / "bc_checkpoint_latest.pkl"
-        with open(bc_ckpt, "rb") as f:
-            params = pickle.load(f)
+    params = load_initial_params(checkpoint_dir, params)
 
     optimizer = optax.chain(
         optax.clip_by_global_norm(0.5),
@@ -205,7 +321,8 @@ def train_ppo_selfplay(
         p = optax.apply_updates(p, updates)
         return p, opt_s, pol_l, val_l, ent
 
-    last_checkpoint_time = time.time()
+    session_start_time = time.time()
+    last_checkpoint_time = session_start_time
     for update in range(1, total_updates + 1):
         start_t = time.perf_counter()
 
@@ -285,6 +402,35 @@ def train_ppo_selfplay(
                 pickle.dump(params, f)
             print(f"Checkpoint saved: {latest_ckpt_file}")
             last_checkpoint_time = current_time
+            metrics = {
+                "update": update,
+                "total_turns": update * num_envs * rollout_len,
+                "pol_loss": float(pol_l),
+                "val_loss": float(val_l),
+                "entropy": float(ent),
+                "fps": float(fps),
+                "timestamp": current_time,
+            }
+            sync_to_huggingface(latest_ckpt_file, metrics)
+
+        if current_time - session_start_time >= MAX_SESSION_DURATION_SEC:
+            print("[!] Approaching Kaggle 12h limit. Initiating autonomous handoff...")
+            with open(latest_ckpt_file, "wb") as f:
+                pickle.dump(params, f)
+            metrics = {
+                "update": update,
+                "total_turns": update * num_envs * rollout_len,
+                "pol_loss": float(pol_l),
+                "val_loss": float(val_l),
+                "entropy": float(ent),
+                "fps": float(fps),
+                "timestamp": current_time,
+                "handoff": True,
+            }
+            sync_to_huggingface(latest_ckpt_file, metrics)
+            trigger_next_kaggle_kernel()
+            print("[✓] Autonomous handoff completed. Exiting session cleanly.")
+            sys.exit(0)
 
     return params
 
