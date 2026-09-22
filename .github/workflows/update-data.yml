@@ -1,0 +1,49 @@
+name: Update Showdown Data
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-data:
+    name: Update Datasets from smogon/pokemon-showdown
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Checkout smogon/pokemon-showdown
+        uses: actions/checkout@v7
+        with:
+          repository: smogon/pokemon-showdown
+          path: smogon-showdown
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14.7'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install numpy poke-env
+
+      - name: Run dataset updater from smogon/pokemon-showdown
+        run: python3 scripts/update_showdown_data.py --showdown-dir ./smogon-showdown
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          commit-message: "chore(data): automated update from smogon/pokemon-showdown"
+          author: "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
+          title: "Automated Showdown Data Update"
+          body: "Automated update of Gen 9 Random Battle sets and mechanics tables from upstream smogon/pokemon-showdown."
+          branch: create-pull-request/update-data
+          delete-branch: true
+          assignees: ${{ github.repository_owner }}
