@@ -19,6 +19,12 @@ def deploy_to_huggingface(
 ) -> bool:
     hf_token = token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
     if not hf_token:
+        try:
+            from huggingface_hub import get_token
+            hf_token = get_token()
+        except Exception:
+            pass
+    if not hf_token:
         print("Error: HF_TOKEN not found in environment or arguments")
         return False
 
