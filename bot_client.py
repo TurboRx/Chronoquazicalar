@@ -45,12 +45,8 @@ from engine.battle_state import (
     TERRAIN_PSYCHIC,
 )
 from engine.damage_calc import check_guaranteed_ko
-from engine.jax_battle_engine import (
-    init_battle,
-    get_valid_actions_mask,
-    SPECIES_TABLE,
-    MOVE_TABLE,
-)
+from engine.jax_battle_engine import init_battle, MOVE_TABLE, TYPE_CHART
+from engine.randbats_knowledge import RandbatsKnowledgeBase
 from models.transformer_policy import ChronosTransformer, state_to_model_inputs
 from search.puct_search import PUCTSearchEngine
 
@@ -59,14 +55,11 @@ class ChronosPlayer(Player):
     def __init__(
         self,
         checkpoint_path: Optional[Path] = None,
+        search_time_budget: float = 1.0,
         account_configuration: Optional[AccountConfiguration] = None,
-        server_configuration=None,
-        search_time_budget: float = 2.0,
+        server_configuration=LocalhostServerConfiguration,
         **kwargs,
     ):
-        if server_configuration is None:
-            server_configuration = LocalhostServerConfiguration
-
         super().__init__(
             account_configuration=account_configuration,
             server_configuration=server_configuration,
@@ -80,12 +73,13 @@ class ChronosPlayer(Player):
                 data = json.load(f)
                 self.species_to_idx = data["species_to_idx"]
                 self.move_to_idx = data["move_to_idx"]
-                self.type_to_idx = {t: i for i, t in enumerate(data["types"])}
+                self.type_to_idx = {t.upper(): i for i, t in enumerate(data["types"])}
         else:
             self.species_to_idx = {}
             self.move_to_idx = {}
             self.type_to_idx = {}
 
+        self.kb = RandbatsKnowledgeBase(mappings_path=mappings_path)
         self.model = ChronosTransformer()
         rng = jax.random.PRNGKey(42)
 
@@ -117,7 +111,11 @@ class ChronosPlayer(Player):
         except Exception:
             pass
 
-    def _battle_to_battle_state(self, battle: Battle) -> BattleState:
+    def _battle_to_battle_state(
+        self,
+        battle: Battle,
+        override_opp_active_moves: Optional[List[int]] = None,
+    ) -> BattleState:
         act_p1 = battle.active_pokemon
         act_sp_id_1 = self.species_to_idx.get(act_p1.species if act_p1 else "pikachu", 950)
         act_hp_1 = act_p1.current_hp_fraction if act_p1 else 1.0
@@ -185,7 +183,25 @@ class ChronosPlayer(Player):
 
         rng = jax.random.PRNGKey(battle.turn)
         p1_moves_all = jnp.array([p1_mvs] + [[100, 100, 100, 100]] * 5, dtype=jnp.int32)
-        p2_moves_all = jnp.full((6, 4), 100, dtype=jnp.int32)
+
+        # Opponent active moves: revealed + predicted via RandbatsKnowledgeBase (or scenario override)
+        if override_opp_active_moves is not None:
+            p2_mvs = override_opp_active_moves
+        else:
+            p2_revealed = [m.id for m in act_p2.moves.values()] if act_p2 and act_p2.moves else []
+            _, p2_mvs = self.kb.predict_moves(act_p2.species if act_p2 else "charizard", p2_revealed)
+
+        # Opponent team moves
+        p2_team_moves = [p2_mvs]
+        for pkm in battle.opponent_team.values():
+            if pkm != act_p2 and len(p2_team_moves) < 6:
+                bench_revealed = [m.id for m in pkm.moves.values()] if pkm.moves else []
+                _, b_mvs = self.kb.predict_moves(pkm.species, bench_revealed)
+                p2_team_moves.append(b_mvs)
+        while len(p2_team_moves) < 6:
+            p2_team_moves.append([100, 100, 100, 100])
+
+        p2_moves_all = jnp.array(p2_team_moves, dtype=jnp.int32)
         base_state = init_battle(
             rng,
             jnp.array(p1_bench, dtype=jnp.int32),
@@ -201,6 +217,56 @@ class ChronosPlayer(Player):
             turn_count=jnp.array(battle.turn, dtype=jnp.int32),
         )
 
+    def _should_terastallize(self, battle: Battle, target_move) -> bool:
+        """
+        Terastallization policy evaluation:
+        1. Defensive counter-tera: If opponent threatens super-effective lethal attack and Tera resists or negates it.
+        2. Offensive STAB boost: If Tera-boosted STAB turns a 2HKO into a guaranteed 1HKO.
+        3. Critical threshold: Low HP preservation on active sweeper.
+        """
+        if not battle.can_tera or not battle.active_pokemon:
+            return False
+
+        act_p1 = battle.active_pokemon
+        act_p2 = battle.opponent_active_pokemon
+
+        my_tera = getattr(act_p1, "tera_type", None)
+        if my_tera is not None:
+            tera_name = my_tera.name if hasattr(my_tera, "name") else str(my_tera)
+        else:
+            predicted = self.kb.predict_tera_types(act_p1.species)
+            tera_name = predicted[0] if predicted else "Normal"
+        my_tera_idx = self.type_to_idx.get(tera_name.upper(), 0)
+
+        # 1. Defensive Counter-Tera: Flip unfavorable matchups
+        if act_p2:
+            p2_revealed = [m.id for m in act_p2.moves.values()] if act_p2.moves else []
+            _, opp_mvs = self.kb.predict_moves(act_p2.species, p2_revealed)
+            my_t1 = self.type_to_idx.get(act_p1.type_1.name.upper(), 0) if act_p1.type_1 else 0
+            my_t2 = self.type_to_idx.get(act_p1.type_2.name.upper(), -1) if act_p1.type_2 else -1
+
+            for m_id in opp_mvs:
+                m_type = int(MOVE_TABLE[m_id, 0])
+                base_eff = float(TYPE_CHART[m_type, my_t1]) * (float(TYPE_CHART[m_type, my_t2]) if my_t2 >= 0 else 1.0)
+                tera_eff = float(TYPE_CHART[m_type, my_tera_idx])
+
+                if base_eff >= 2.0 and tera_eff <= 0.5:
+                    return True
+
+        # 2. Offensive STAB Tera: Secure lethal game-winning KO
+        if target_move:
+            mv_type_str = target_move.type.name.upper() if hasattr(target_move.type, "name") else str(target_move.type).upper()
+            mv_type_idx = self.type_to_idx.get(mv_type_str, -1)
+            if mv_type_idx == my_tera_idx and act_p2 and act_p2.current_hp_fraction:
+                if 0.40 <= act_p2.current_hp_fraction <= 0.85:
+                    return True
+
+        # 3. Clutch Survival: Low HP and staying in with lethal attack
+        if act_p1.current_hp_fraction and act_p1.current_hp_fraction < 0.45:
+            return True
+
+        return False
+
     def choose_move(self, battle: Battle) -> BattleOrder:
         state = self._battle_to_battle_state(battle)
         act_p1 = battle.active_pokemon
@@ -215,15 +281,38 @@ class ChronosPlayer(Player):
                 if ko_slot < len(all_moves):
                     target_move = all_moves[ko_slot]
                     if target_move in battle.available_moves:
-                        return self.create_order(target_move)
+                        should_tera = self._should_terastallize(battle, target_move)
+                        return self.create_order(target_move, terastallize=should_tera)
 
-        # 2. Search policy resolution
-        chosen_act, strategy, _ = self.searcher.search(
-            state,
-            time_limit_sec=2.0,
-            max_simulations=100,
-            temperature=0.3,
-        )
+        # 2. Search policy resolution with scenario determinization
+        opp_sp = act_p2.species if act_p2 else "charizard"
+        p2_revealed = [m.id for m in act_p2.moves.values()] if act_p2 and act_p2.moves else []
+        scenarios = self.kb.get_candidate_move_scenarios(opp_sp, p2_revealed, max_scenarios=2)
+
+        if len(scenarios) <= 1:
+            chosen_act, strategy, _ = self.searcher.search(
+                state,
+                time_limit_sec=2.0,
+                max_simulations=100,
+                temperature=0.3,
+            )
+        else:
+            aggregated_strategy = np.zeros(9, dtype=np.float32)
+            time_per_scenario = min(1.0, 2.0 / len(scenarios))
+            sims_per_scenario = max(40, 100 // len(scenarios))
+
+            for _, scen_ids, weight in scenarios:
+                scen_state = self._battle_to_battle_state(battle, override_opp_active_moves=scen_ids)
+                _, scen_strat, _ = self.searcher.search(
+                    scen_state,
+                    time_limit_sec=time_per_scenario,
+                    max_simulations=sims_per_scenario,
+                    temperature=0.3,
+                )
+                aggregated_strategy += weight * scen_strat
+
+            strategy = aggregated_strategy / np.sum(aggregated_strategy)
+            chosen_act = int(np.argmax(strategy))
 
         # 3. Forced switch scenario (active Pokémon fainted)
         if not battle.available_moves and battle.available_switches:
@@ -243,7 +332,7 @@ class ChronosPlayer(Player):
         if chosen_act < 4 and battle.available_moves:
             target_move = all_moves[chosen_act] if chosen_act < len(all_moves) else None
             if target_move and target_move in battle.available_moves:
-                should_tera = bool(battle.can_tera and act_p1 and act_p1.current_hp_fraction < 0.6)
+                should_tera = self._should_terastallize(battle, target_move)
                 return self.create_order(target_move, terastallize=should_tera)
             # Fallback: best available move by strategy probability
             best_move = battle.available_moves[0]
@@ -252,7 +341,8 @@ class ChronosPlayer(Player):
                 if m in battle.available_moves and strategy[idx] > best_p:
                     best_p = strategy[idx]
                     best_move = m
-            return self.create_order(best_move)
+            should_tera = self._should_terastallize(battle, best_move)
+            return self.create_order(best_move, terastallize=should_tera)
 
         # 5. Standard switch selection (actions 4..8)
         elif chosen_act >= 4 and battle.available_switches:
@@ -272,7 +362,14 @@ class ChronosPlayer(Player):
 
         # 6. Safety fallback
         if battle.available_moves:
-            return self.create_order(battle.available_moves[0])
+            best_move = battle.available_moves[0]
+            best_p = -1.0
+            for idx, m in enumerate(all_moves[:4]):
+                if m in battle.available_moves and strategy[idx] > best_p:
+                    best_p = strategy[idx]
+                    best_move = m
+            should_tera = self._should_terastallize(battle, best_move)
+            return self.create_order(best_move, terastallize=should_tera)
         elif battle.available_switches:
             return self.create_order(battle.available_switches[0])
         return self.choose_random_move(battle)
