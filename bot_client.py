@@ -184,13 +184,14 @@ class ChronosPlayer(Player):
                 weather = WEATHER_SNOW
 
         rng = jax.random.PRNGKey(battle.turn)
-        moves_tensor = jnp.array([[p1_mvs, [100, 100, 100, 100]] * 3], dtype=jnp.int32).reshape(2, 6, 4)
+        p1_moves_all = jnp.array([p1_mvs] + [[100, 100, 100, 100]] * 5, dtype=jnp.int32)
+        p2_moves_all = jnp.full((6, 4), 100, dtype=jnp.int32)
         base_state = init_battle(
             rng,
             jnp.array(p1_bench, dtype=jnp.int32),
             jnp.array(p2_bench, dtype=jnp.int32),
-            moves_tensor[0],
-            moves_tensor[1],
+            p1_moves_all,
+            p2_moves_all,
         )
 
         return base_state.replace(
