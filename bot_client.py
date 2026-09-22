@@ -202,28 +202,78 @@ class ChronosPlayer(Player):
 
     def choose_move(self, battle: Battle) -> BattleOrder:
         state = self._battle_to_battle_state(battle)
+        act_p1 = battle.active_pokemon
+        all_moves = list(act_p1.moves.values()) if act_p1 and act_p1.moves else []
+        bench_pkms = [pkm for pkm in battle.team.values() if pkm != act_p1]
 
-        has_ko, ko_action = check_guaranteed_ko(state, player_idx=0)
-        if bool(has_ko) and int(ko_action) >= 0:
-            ko_slot = int(ko_action)
-            if battle.available_moves and ko_slot < len(battle.available_moves):
-                return self.create_order(battle.available_moves[ko_slot])
+        # 1. Guaranteed lethal KO check
+        if battle.available_moves:
+            has_ko, ko_action = check_guaranteed_ko(state, player_idx=0)
+            if bool(has_ko) and int(ko_action) >= 0:
+                ko_slot = int(ko_action)
+                if ko_slot < len(all_moves):
+                    target_move = all_moves[ko_slot]
+                    if target_move in battle.available_moves:
+                        return self.create_order(target_move)
 
-        chosen_act, _, _ = self.searcher.search(
+        # 2. Search policy resolution
+        chosen_act, strategy, _ = self.searcher.search(
             state,
             time_limit_sec=2.0,
             max_simulations=100,
             temperature=0.3,
         )
 
+        # 3. Forced switch scenario (active Pokémon fainted)
+        if not battle.available_moves and battle.available_switches:
+            best_switch = None
+            best_prob = -1.0
+            for idx, pkm in enumerate(bench_pkms):
+                if pkm in battle.available_switches:
+                    prob = strategy[4 + idx] if (4 + idx) < len(strategy) else 0.0
+                    if prob > best_prob:
+                        best_prob = prob
+                        best_switch = pkm
+            if best_switch:
+                return self.create_order(best_switch)
+            return self.create_order(battle.available_switches[0])
+
+        # 4. Standard move selection (actions 0..3)
         if chosen_act < 4 and battle.available_moves:
-            slot = min(chosen_act, len(battle.available_moves) - 1)
-            return self.create_order(battle.available_moves[slot])
+            target_move = all_moves[chosen_act] if chosen_act < len(all_moves) else None
+            if target_move and target_move in battle.available_moves:
+                should_tera = bool(battle.can_tera and act_p1 and act_p1.current_hp_fraction < 0.6)
+                return self.create_order(target_move, terastallize=should_tera)
+            # Fallback: best available move by strategy probability
+            best_move = battle.available_moves[0]
+            best_p = -1.0
+            for idx, m in enumerate(all_moves[:4]):
+                if m in battle.available_moves and strategy[idx] > best_p:
+                    best_p = strategy[idx]
+                    best_move = m
+            return self.create_order(best_move)
+
+        # 5. Standard switch selection (actions 4..8)
         elif chosen_act >= 4 and battle.available_switches:
             switch_slot = chosen_act - 4
-            slot = min(switch_slot, len(battle.available_switches) - 1)
-            return self.create_order(battle.available_switches[slot])
+            target_pkm = bench_pkms[switch_slot] if switch_slot < len(bench_pkms) else None
+            if target_pkm and target_pkm in battle.available_switches:
+                return self.create_order(target_pkm)
+            # Fallback: best available switch by strategy probability
+            best_switch = battle.available_switches[0]
+            best_p = -1.0
+            for idx, pkm in enumerate(bench_pkms):
+                if pkm in battle.available_switches and (4 + idx) < len(strategy):
+                    if strategy[4 + idx] > best_p:
+                        best_p = strategy[4 + idx]
+                        best_switch = pkm
+            return self.create_order(best_switch)
 
+        # 6. Safety fallback
+        if battle.available_moves:
+            return self.create_order(battle.available_moves[0])
+        elif battle.available_switches:
+            return self.create_order(battle.available_switches[0])
         return self.choose_random_move(battle)
 
 
