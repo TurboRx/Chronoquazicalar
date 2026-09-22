@@ -52,6 +52,7 @@ class BattleState:
 
     # Entire Team features (6 slots per player: slot 0 is active, slots 1-5 are bench)
     team_species: jnp.ndarray        # shape (2, 6), int32
+    team_moves: jnp.ndarray          # shape (2, 6, 4), int32
     team_hp: jnp.ndarray             # shape (2, 6), float32
     team_alive: jnp.ndarray          # shape (2, 6), bool
 

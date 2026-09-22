@@ -194,12 +194,16 @@ class PUCTSearchEngine:
         u_p1 = self.c_puct * node.prior_p1 * (sqrt_total / (1.0 + node.n_p1))
         u_p2 = self.c_puct * node.prior_p2 * (sqrt_total / (1.0 + node.n_p2))
 
-        q_p1 = np.mean(node.q_matrix, axis=1)
+        mask_p2 = node.valid_mask_p2.astype(np.float32)
+        num_valid_p2 = max(1.0, float(np.sum(mask_p2)))
+        q_p1 = np.sum(node.q_matrix * mask_p2[None, :], axis=1) / num_valid_p2
         score_p1 = q_p1 + u_p1
         score_p1[~node.valid_mask_p1] = -1e9
         best_a1 = int(np.argmax(score_p1))
 
-        q_p2 = np.mean(node.q_matrix, axis=0)
+        mask_p1 = node.valid_mask_p1.astype(np.float32)
+        num_valid_p1 = max(1.0, float(np.sum(mask_p1)))
+        q_p2 = np.sum(node.q_matrix * mask_p1[:, None], axis=0) / num_valid_p1
         score_p2 = q_p2 - u_p2
         score_p2[~node.valid_mask_p2] = 1e9
         best_a2 = int(np.argmin(score_p2))

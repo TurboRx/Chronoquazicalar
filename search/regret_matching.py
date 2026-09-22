@@ -23,6 +23,8 @@ def solve_matrix_game_cfr(
         p1_strategy, p2_strategy, game_value
     """
     m, n = payoff_matrix.shape
+    if m == 0 or n == 0:
+        return np.zeros(m, dtype=np.float64), np.zeros(n, dtype=np.float64), 0.0
 
     regrets_p1 = np.zeros(m, dtype=np.float64)
     regrets_p2 = np.zeros(n, dtype=np.float64)
@@ -68,16 +70,25 @@ def get_mixed_action(
     num_iterations: int = 500,
     temperature: float = 1.0,
 ) -> Tuple[int, np.ndarray]:
+    if len(valid_actions) == 0:
+        return 0, np.zeros(9, dtype=np.float32)
+
     p1_strat, _, _ = solve_matrix_game_cfr(payoff_matrix, num_iterations=num_iterations)
+
+    sum_p = np.sum(p1_strat)
+    if sum_p > 1e-12:
+        norm_p = p1_strat / sum_p
+    else:
+        norm_p = np.full(len(valid_actions), 1.0 / len(valid_actions), dtype=np.float64)
 
     full_strategy = np.zeros(9, dtype=np.float32)
     for idx, act in enumerate(valid_actions):
-        full_strategy[act] = float(p1_strat[idx])
+        full_strategy[act] = float(norm_p[idx])
 
     if temperature <= 1e-4:
-        best_local_idx = int(np.argmax(p1_strat))
+        best_local_idx = int(np.argmax(norm_p))
         chosen_action = int(valid_actions[best_local_idx])
     else:
-        chosen_action = int(np.random.choice(valid_actions, p=p1_strat))
+        chosen_action = int(np.random.choice(valid_actions, p=norm_p))
 
     return chosen_action, full_strategy

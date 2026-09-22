@@ -134,6 +134,7 @@ def init_battle(rng_key: jax.Array, p1_team: jnp.ndarray, p2_team: jnp.ndarray, 
     active_types = jnp.stack([sp_data_0[6:8], sp_data_1[6:8]])
 
     team_species = jnp.stack([p1_team, p2_team])
+    team_moves = jnp.stack([p1_moves, p2_moves])
     team_hp = jnp.ones((2, 6), dtype=jnp.float32)
     team_alive = jnp.ones((2, 6), dtype=jnp.bool_)
 
@@ -151,6 +152,7 @@ def init_battle(rng_key: jax.Array, p1_team: jnp.ndarray, p2_team: jnp.ndarray, 
         active_move_pp=active_move_pp,
         active_types=active_types,
         team_species=team_species,
+        team_moves=team_moves,
         team_hp=team_hp,
         team_alive=team_alive,
         weather=jnp.array(WEATHER_NONE, dtype=jnp.int32),
@@ -200,12 +202,15 @@ def execute_switch(
 
     total_hazard_dmg = sr_dmg + spikes_dmg
     incoming_current_hp = jnp.maximum(new_max_hp * state.team_hp[player_idx, bench_slot] - total_hazard_dmg, 0.0)
-    incoming_hp_frac = incoming_current_hp / new_max_hp
+    incoming_hp_frac = incoming_current_hp / jnp.maximum(new_max_hp, 1.0)
     incoming_alive = incoming_hp_frac > 0
 
     web_active = (state.hazards[player_idx, 3] > 0) & ~is_flying
     new_boosts = jnp.zeros(7, dtype=jnp.int32)
     new_boosts = new_boosts.at[4].set(jnp.where(web_active, -1, 0))
+
+    new_act_mvs = state.team_moves[player_idx, bench_slot]
+    old_act_mvs = state.active_moves[player_idx]
 
     act_sp = state.active_species.at[player_idx].set(new_act_sp)
     act_hp = state.active_hp.at[player_idx].set(incoming_hp_frac)
@@ -214,8 +219,11 @@ def execute_switch(
     act_stats = state.active_stats.at[player_idx].set(new_stats)
     act_boosts = state.active_boosts.at[player_idx].set(new_boosts)
     act_types = state.active_types.at[player_idx].set(new_types)
+    act_mvs = state.active_moves.at[player_idx].set(new_act_mvs)
+    act_pp = state.active_move_pp.at[player_idx].set(jnp.ones(4, dtype=jnp.float32))
 
     team_sp = state.team_species.at[player_idx, 0].set(new_act_sp).at[player_idx, bench_slot].set(old_act_sp)
+    team_mvs = state.team_moves.at[player_idx, 0].set(new_act_mvs).at[player_idx, bench_slot].set(old_act_mvs)
     team_hp = state.team_hp.at[player_idx, 0].set(incoming_hp_frac).at[player_idx, bench_slot].set(old_act_hp)
     team_al = state.team_alive.at[player_idx, 0].set(incoming_alive).at[player_idx, bench_slot].set(old_act_alive)
 
@@ -227,7 +235,10 @@ def execute_switch(
         active_stats=act_stats,
         active_boosts=act_boosts,
         active_types=act_types,
+        active_moves=act_mvs,
+        active_move_pp=act_pp,
         team_species=team_sp,
+        team_moves=team_mvs,
         team_hp=team_hp,
         team_alive=team_al,
     )
