@@ -16,6 +16,8 @@ def deploy_to_huggingface(
     checkpoint_path: Path,
     config_path: Optional[Path] = None,
     token: Optional[str] = None,
+    commit_message: Optional[str] = None,
+    commit_description: Optional[str] = None,
 ) -> bool:
     hf_token = token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
     if not hf_token:
@@ -29,6 +31,8 @@ def deploy_to_huggingface(
         return False
 
     api = HfApi(token=hf_token)
+    msg = commit_message or f"feat(weights): update {checkpoint_path.name}"
+    desc = commit_description or "Chronos Transformer policy & value network for Gen 9 Random Battles (PPO self-play in JAX)."
 
     try:
         api.create_repo(repo_id=repo_id, private=True, exist_ok=True, repo_type="model")
@@ -39,6 +43,8 @@ def deploy_to_huggingface(
                 path_in_repo=checkpoint_path.name,
                 repo_id=repo_id,
                 repo_type="model",
+                commit_message=msg,
+                commit_description=desc,
             )
 
         model_config = {
@@ -116,10 +122,18 @@ def main():
     parser.add_argument("--repo-id", type=str, default="chronos-gen9-randbats", help="Repo ID (e.g. username/repo)")
     parser.add_argument("--checkpoint", type=str, default="checkpoints/bc_checkpoint_latest.pkl", help="Checkpoint path")
     parser.add_argument("--token", type=str, help="Hugging Face token")
+    parser.add_argument("--message", type=str, help="Commit message")
+    parser.add_argument("--description", type=str, help="Commit description")
     args = parser.parse_args()
 
     ckpt_path = Path(args.checkpoint)
-    deploy_to_huggingface(repo_id=args.repo_id, checkpoint_path=ckpt_path, token=args.token)
+    deploy_to_huggingface(
+        repo_id=args.repo_id,
+        checkpoint_path=ckpt_path,
+        token=args.token,
+        commit_message=args.message,
+        commit_description=args.description,
+    )
 
 
 if __name__ == "__main__":
