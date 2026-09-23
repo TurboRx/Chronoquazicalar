@@ -5,7 +5,6 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
-    open-pull-requests-limit: 99
     groups:
       actions-dependencies:
         patterns:
@@ -16,7 +15,6 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
-    open-pull-requests-limit: 99
     groups:
       python-dependencies:
         patterns:
