@@ -37,6 +37,9 @@ jobs:
       - name: Run dataset updater from smogon/pokemon-showdown
         run: python3 scripts/update_showdown_data.py --showdown-dir ./smogon-showdown
 
+      - name: Clean up temporary clone
+        run: rm -rf ./smogon-showdown
+
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v8
         with:
