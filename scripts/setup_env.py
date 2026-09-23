@@ -45,7 +45,9 @@ def install_packages() -> None:
         subprocess.check_call(cmd)
 
 
-def setup_kaggle(username: str | None = None, api_key: str | None = None, skip_prompt: bool = False) -> bool:
+def setup_kaggle(
+    username: str | None = None, api_key: str | None = None, skip_prompt: bool = False
+) -> bool:
     kaggle_dir = Path.home() / ".kaggle"
     kaggle_json = kaggle_dir / "kaggle.json"
     access_token = kaggle_dir / "access_token"
@@ -99,6 +101,7 @@ def setup_huggingface(token: str | None = None, skip_prompt: bool = False) -> bo
     def check_whoami() -> tuple[bool, str]:
         try:
             from huggingface_hub import HfApi
+
             user_info = HfApi().whoami()
             return True, user_info.get("name", "")
         except Exception:
@@ -118,6 +121,7 @@ def setup_huggingface(token: str | None = None, skip_prompt: bool = False) -> bo
     if hf_token:
         try:
             from huggingface_hub import login
+
             login(token=hf_token, add_to_git_credential=False)
             is_logged_in, _ = check_whoami()
             return is_logged_in
@@ -139,7 +143,9 @@ def main() -> int:
         return 1
 
     install_packages()
-    k_ok = setup_kaggle(args.kaggle_user, args.kaggle_key, skip_prompt=args.skip_auth_prompt)
+    k_ok = setup_kaggle(
+        args.kaggle_user, args.kaggle_key, skip_prompt=args.skip_auth_prompt
+    )
     hf_ok = setup_huggingface(args.hf_token, skip_prompt=args.skip_auth_prompt)
 
     return 0 if (k_ok and hf_ok) else 2

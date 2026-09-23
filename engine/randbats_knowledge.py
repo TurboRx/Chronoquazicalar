@@ -11,7 +11,7 @@ moves, likely Tera types, and exact level scaling for top-tier competitive play.
 import json
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
 
 def to_id(text: str) -> str:
@@ -34,7 +34,14 @@ class RandbatsKnowledgeBase:
 
         # Locate sets.json: first try pokemon-showdown, fallback to engine/data
         if sets_path is None:
-            candidate_showdown = base_dir / "pokemon-showdown" / "data" / "random-battles" / "gen9" / "sets.json"
+            candidate_showdown = (
+                base_dir
+                / "pokemon-showdown"
+                / "data"
+                / "random-battles"
+                / "gen9"
+                / "sets.json"
+            )
             candidate_local = base_dir / "engine" / "data" / "randbats_sets.json"
             if candidate_showdown.exists():
                 sets_path = candidate_showdown
@@ -86,7 +93,9 @@ class RandbatsKnowledgeBase:
             return int(entry["level"])
         return default
 
-    def get_candidate_sets(self, species_name: str, revealed_moves: Optional[List[str]] = None) -> List[dict]:
+    def get_candidate_sets(
+        self, species_name: str, revealed_moves: Optional[List[str]] = None
+    ) -> List[dict]:
         """
         Filter possible sets for a species given any revealed moves.
         Returns all sets if no revealed moves match, or matching sets otherwise.
@@ -145,7 +154,9 @@ class RandbatsKnowledgeBase:
                     move_counts[norm_mv] = move_counts.get(norm_mv, 0) + 1
 
         # Sort unrevealed moves by frequency (most common first)
-        sorted_unrevealed = sorted(move_counts.keys(), key=lambda m: move_counts[m], reverse=True)
+        sorted_unrevealed = sorted(
+            move_counts.keys(), key=lambda m: move_counts[m], reverse=True
+        )
 
         # Assemble final 4 moves
         final_moves = list(revealed)
@@ -173,7 +184,9 @@ class RandbatsKnowledgeBase:
             for tt in s.get("teraTypes", []):
                 tera_counts[tt] = tera_counts.get(tt, 0) + 1
 
-        sorted_tera = sorted(tera_counts.keys(), key=lambda t: tera_counts[t], reverse=True)
+        sorted_tera = sorted(
+            tera_counts.keys(), key=lambda t: tera_counts[t], reverse=True
+        )
         return sorted_tera if sorted_tera else ["Normal"]
 
     def predict_abilities(
@@ -188,7 +201,9 @@ class RandbatsKnowledgeBase:
             for ab in s.get("abilities", []):
                 ability_counts[ab] = ability_counts.get(ab, 0) + 1
 
-        return sorted(ability_counts.keys(), key=lambda a: ability_counts[a], reverse=True)
+        return sorted(
+            ability_counts.keys(), key=lambda a: ability_counts[a], reverse=True
+        )
 
     def get_candidate_move_scenarios(
         self,
@@ -225,4 +240,3 @@ class RandbatsKnowledgeBase:
             scenarios.append((scen_moves, scen_ids, weight_per_set))
 
         return scenarios if scenarios else [(["tackle"] * 4, [100] * 4, 1.0)]
-

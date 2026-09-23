@@ -5,14 +5,15 @@ Phase 6: Unit tests for CFR matrix game solver and pUCT lookahead search.
 
 import time
 import unittest
-import numpy as np
+
 import jax
 import jax.numpy as jnp
+import numpy as np
 
-from engine.jax_battle_engine import init_battle, step
+from engine.jax_battle_engine import init_battle
 from models.transformer_policy import ChronosTransformer, state_to_model_inputs
-from search.regret_matching import solve_matrix_game_cfr, get_mixed_action
 from search.puct_search import PUCTSearchEngine
+from search.regret_matching import solve_matrix_game_cfr
 
 
 class TestSearchAndRegretMatching(unittest.TestCase):
@@ -21,11 +22,13 @@ class TestSearchAndRegretMatching(unittest.TestCase):
         # R vs R=0, R vs P=-1, R vs S=1
         # P vs R=1, P vs P=0,  P vs S=-1
         # S vs R=-1,S vs P=1,  S vs S=0
-        rps_matrix = np.array([
-            [ 0.0, -1.0,  1.0],
-            [ 1.0,  0.0, -1.0],
-            [-1.0,  1.0,  0.0],
-        ])
+        rps_matrix = np.array(
+            [
+                [0.0, -1.0, 1.0],
+                [1.0, 0.0, -1.0],
+                [-1.0, 1.0, 0.0],
+            ]
+        )
         s1, s2, val = solve_matrix_game_cfr(rps_matrix, num_iterations=1000)
 
         print(f"\n[✓] Rock-Paper-Scissors CFR P1 Strategy: {s1}")
@@ -33,8 +36,8 @@ class TestSearchAndRegretMatching(unittest.TestCase):
         print(f"[✓] Game value: {val:.4f}")
 
         # Nash equilibrium is [1/3, 1/3, 1/3]
-        np.testing.assert_allclose(s1, [1/3, 1/3, 1/3], atol=0.05)
-        np.testing.assert_allclose(s2, [1/3, 1/3, 1/3], atol=0.05)
+        np.testing.assert_allclose(s1, [1 / 3, 1 / 3, 1 / 3], atol=0.05)
+        np.testing.assert_allclose(s2, [1 / 3, 1 / 3, 1 / 3], atol=0.05)
         self.assertAlmostEqual(val, 0.0, places=1)
 
     def test_puct_search_and_time_budget(self):
@@ -70,7 +73,9 @@ class TestSearchAndRegretMatching(unittest.TestCase):
         )
         elapsed = time.perf_counter() - start_t
 
-        print(f"[✓] pUCT Search completed in {elapsed:.3f}s | Simulations: {stats['searched_simulations']}")
+        print(
+            f"[✓] pUCT Search completed in {elapsed:.3f}s | Simulations: {stats['searched_simulations']}"
+        )
         print(f"[✓] Chosen Action: {chosen_act} | Strategy: {strat.round(3)}")
 
         # Verify time budget was strictly respected
@@ -101,7 +106,9 @@ class TestSearchAndRegretMatching(unittest.TestCase):
         searcher = PUCTSearchEngine(model=model, params=params)
         act, strat, stats = searcher.search(ko_state)
 
-        print(f"[✓] Guaranteed KO heuristic triggered: {stats['heuristic_triggered']} | Action: {act}")
+        print(
+            f"[✓] Guaranteed KO heuristic triggered: {stats['heuristic_triggered']} | Action: {act}"
+        )
         self.assertTrue(stats["heuristic_triggered"])
         self.assertEqual(stats["searched_simulations"], 0)
         self.assertIn(act, [0, 1, 2, 3])

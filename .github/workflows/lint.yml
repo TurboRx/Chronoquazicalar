@@ -1,0 +1,34 @@
+name: Lint and Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint-and-test:
+    name: Code Quality & Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install ruff jax jaxlib flax optax numpy scipy poke-env
+
+      - name: Run Ruff Linter
+        run: ruff check engine/ models/ search/ scripts/ bot_client.py
+
+      - name: Run Unit Tests
+        run: |
+          python3 -m unittest discover -s engine -p "test_*.py"
+          python3 -m unittest discover -s models -p "test_*.py"
+          python3 -m unittest discover -s search -p "test_*.py"

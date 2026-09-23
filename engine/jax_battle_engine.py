@@ -11,24 +11,14 @@ import jax.numpy as jnp
 import numpy as np
 
 from engine.battle_state import (
-    BattleState,
-    STATUS_NONE,
     STATUS_BRN,
     STATUS_PAR,
     STATUS_PSN,
-    STATUS_TOX,
-    STATUS_SLP,
-    STATUS_FRZ,
-    WEATHER_NONE,
-    WEATHER_SUN,
-    WEATHER_RAIN,
-    WEATHER_SAND,
-    WEATHER_SNOW,
     TERRAIN_NONE,
-    TERRAIN_ELECTRIC,
-    TERRAIN_GRASSY,
-    TERRAIN_MISTY,
-    TERRAIN_PSYCHIC,
+    WEATHER_NONE,
+    WEATHER_RAIN,
+    WEATHER_SUN,
+    BattleState,
 )
 
 TABLES_PATH = Path(__file__).resolve().parent / "data" / "mechanics_tables.npz"
@@ -36,9 +26,9 @@ if not TABLES_PATH.exists():
     raise FileNotFoundError(f"Mechanics tables not found at {TABLES_PATH}")
 
 _tables = np.load(TABLES_PATH)
-TYPE_CHART = jnp.array(_tables["type_chart"], dtype=jnp.float32)       # (18, 18)
-SPECIES_TABLE = jnp.array(_tables["species_table"], dtype=jnp.int32)    # (N_species, 8)
-MOVE_TABLE = jnp.array(_tables["move_table"], dtype=jnp.int32)          # (N_moves, 6)
+TYPE_CHART = jnp.array(_tables["type_chart"], dtype=jnp.float32)  # (18, 18)
+SPECIES_TABLE = jnp.array(_tables["species_table"], dtype=jnp.int32)  # (N_species, 8)
+MOVE_TABLE = jnp.array(_tables["move_table"], dtype=jnp.int32)  # (N_moves, 6)
 
 ROCK_TYPE_IDX = 12
 FLYING_TYPE_IDX = 9
@@ -75,7 +65,9 @@ def calc_raw_damage(
         attacker_stats[1] * get_stage_multiplier(attacker_boosts[0]),
         attacker_stats[3] * get_stage_multiplier(attacker_boosts[2]),
     )
-    atk_val = jnp.where((m_cat == 0) & (attacker_status == STATUS_BRN), atk_val * 0.5, atk_val)
+    atk_val = jnp.where(
+        (m_cat == 0) & (attacker_status == STATUS_BRN), atk_val * 0.5, atk_val
+    )
 
     def_val = jnp.where(
         m_cat == 0,
@@ -89,9 +81,15 @@ def calc_raw_damage(
 
     sun_mod = jnp.where(m_type == 1, 1.5, jnp.where(m_type == 2, 0.5, 1.0))
     rain_mod = jnp.where(m_type == 2, 1.5, jnp.where(m_type == 1, 0.5, 1.0))
-    weather_mod = jnp.where(weather == WEATHER_SUN, sun_mod, jnp.where(weather == WEATHER_RAIN, rain_mod, 1.0))
+    weather_mod = jnp.where(
+        weather == WEATHER_SUN,
+        sun_mod,
+        jnp.where(weather == WEATHER_RAIN, rain_mod, 1.0),
+    )
 
-    is_stab = (m_type == attacker_types[0]) | ((attacker_types[1] >= 0) & (m_type == attacker_types[1]))
+    is_stab = (m_type == attacker_types[0]) | (
+        (attacker_types[1] >= 0) & (m_type == attacker_types[1])
+    )
     stab_mod = jnp.where(is_stab, 1.5, 1.0)
 
     eff1 = TYPE_CHART[m_type, defender_types[0]]
@@ -101,17 +99,31 @@ def calc_raw_damage(
     mult = weather_mod * stab_mod * type_eff * rng_roll
     final_dmg = jnp.floor(base_dmg * mult)
 
-    return jnp.where(is_damage_move & (type_eff > 0.0), jnp.maximum(final_dmg, 1.0), 0.0)
+    return jnp.where(
+        is_damage_move & (type_eff > 0.0), jnp.maximum(final_dmg, 1.0), 0.0
+    )
 
 
-def calc_stats_from_base(base_stats: jnp.ndarray, level: int = 80) -> Tuple[jnp.ndarray, jnp.ndarray]:
-    hp_stat = jnp.floor(((2.0 * base_stats[0] + 31.0 + 21.0) * level) / 100.0) + level + 10.0
-    other_stats = jnp.floor(((2.0 * base_stats[1:] + 31.0 + 21.0) * level) / 100.0) + 5.0
+def calc_stats_from_base(
+    base_stats: jnp.ndarray, level: int = 80
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    hp_stat = (
+        jnp.floor(((2.0 * base_stats[0] + 31.0 + 21.0) * level) / 100.0) + level + 10.0
+    )
+    other_stats = (
+        jnp.floor(((2.0 * base_stats[1:] + 31.0 + 21.0) * level) / 100.0) + 5.0
+    )
     full_stats = jnp.concatenate([jnp.array([hp_stat]), other_stats])
     return hp_stat, full_stats
 
 
-def init_battle(rng_key: jax.Array, p1_team: jnp.ndarray, p2_team: jnp.ndarray, p1_moves: jnp.ndarray, p2_moves: jnp.ndarray) -> BattleState:
+def init_battle(
+    rng_key: jax.Array,
+    p1_team: jnp.ndarray,
+    p2_team: jnp.ndarray,
+    p1_moves: jnp.ndarray,
+    p2_moves: jnp.ndarray,
+) -> BattleState:
     act_sp_0 = p1_team[0]
     act_sp_1 = p2_team[0]
     active_species = jnp.array([act_sp_0, act_sp_1], dtype=jnp.int32)
@@ -168,7 +180,11 @@ def init_battle(rng_key: jax.Array, p1_team: jnp.ndarray, p2_team: jnp.ndarray, 
 
 
 def get_valid_actions_mask(state: BattleState) -> jnp.ndarray:
-    move_valid = (state.active_moves > 0) & (state.active_move_pp > 0) & (state.active_hp[:, None] > 0)
+    move_valid = (
+        (state.active_moves > 0)
+        & (state.active_move_pp > 0)
+        & (state.active_hp[:, None] > 0)
+    )
     switch_valid = state.team_alive[:, 1:6]
     return jnp.concatenate([move_valid, switch_valid], axis=-1)
 
@@ -178,8 +194,6 @@ def execute_switch(
     player_idx: int,
     bench_slot: int,
 ) -> BattleState:
-    opp_idx = 1 - player_idx
-
     old_act_sp = state.active_species[player_idx]
     old_act_hp = state.active_hp[player_idx]
     old_act_alive = old_act_hp > 0
@@ -197,11 +211,19 @@ def execute_switch(
 
     spikes_layers = state.hazards[player_idx, 1]
     is_flying = (new_types[0] == FLYING_TYPE_IDX) | (new_types[1] == FLYING_TYPE_IDX)
-    spikes_frac = jnp.where(spikes_layers == 1, 0.125, jnp.where(spikes_layers == 2, 0.1667, jnp.where(spikes_layers >= 3, 0.25, 0.0)))
-    spikes_dmg = jnp.where((spikes_layers > 0) & ~is_flying, jnp.floor(new_max_hp * spikes_frac), 0.0)
+    spikes_frac = jnp.where(
+        spikes_layers == 1,
+        0.125,
+        jnp.where(spikes_layers == 2, 0.1667, jnp.where(spikes_layers >= 3, 0.25, 0.0)),
+    )
+    spikes_dmg = jnp.where(
+        (spikes_layers > 0) & ~is_flying, jnp.floor(new_max_hp * spikes_frac), 0.0
+    )
 
     total_hazard_dmg = sr_dmg + spikes_dmg
-    incoming_current_hp = jnp.maximum(new_max_hp * state.team_hp[player_idx, bench_slot] - total_hazard_dmg, 0.0)
+    incoming_current_hp = jnp.maximum(
+        new_max_hp * state.team_hp[player_idx, bench_slot] - total_hazard_dmg, 0.0
+    )
     incoming_hp_frac = incoming_current_hp / jnp.maximum(new_max_hp, 1.0)
     incoming_alive = incoming_hp_frac > 0
 
@@ -222,10 +244,30 @@ def execute_switch(
     act_mvs = state.active_moves.at[player_idx].set(new_act_mvs)
     act_pp = state.active_move_pp.at[player_idx].set(jnp.ones(4, dtype=jnp.float32))
 
-    team_sp = state.team_species.at[player_idx, 0].set(new_act_sp).at[player_idx, bench_slot].set(old_act_sp)
-    team_mvs = state.team_moves.at[player_idx, 0].set(new_act_mvs).at[player_idx, bench_slot].set(old_act_mvs)
-    team_hp = state.team_hp.at[player_idx, 0].set(incoming_hp_frac).at[player_idx, bench_slot].set(old_act_hp)
-    team_al = state.team_alive.at[player_idx, 0].set(incoming_alive).at[player_idx, bench_slot].set(old_act_alive)
+    team_sp = (
+        state.team_species.at[player_idx, 0]
+        .set(new_act_sp)
+        .at[player_idx, bench_slot]
+        .set(old_act_sp)
+    )
+    team_mvs = (
+        state.team_moves.at[player_idx, 0]
+        .set(new_act_mvs)
+        .at[player_idx, bench_slot]
+        .set(old_act_mvs)
+    )
+    team_hp = (
+        state.team_hp.at[player_idx, 0]
+        .set(incoming_hp_frac)
+        .at[player_idx, bench_slot]
+        .set(old_act_hp)
+    )
+    team_al = (
+        state.team_alive.at[player_idx, 0]
+        .set(incoming_alive)
+        .at[player_idx, bench_slot]
+        .set(old_act_alive)
+    )
 
     return state.replace(
         active_species=act_sp,
@@ -311,13 +353,33 @@ def step(
     rng_roll2 = jax.random.uniform(k_roll2, shape=(), minval=0.85, maxval=1.0)
     tie_breaker = jax.random.bernoulli(k_tie, p=0.5)
 
-    pri_0 = jnp.where(action_p1 >= 4, 6, MOVE_TABLE[state.active_moves[0, jnp.clip(action_p1, 0, 3)], 4])
-    pri_1 = jnp.where(action_p2 >= 4, 6, MOVE_TABLE[state.active_moves[1, jnp.clip(action_p2, 0, 3)], 4])
+    pri_0 = jnp.where(
+        action_p1 >= 4,
+        6,
+        MOVE_TABLE[state.active_moves[0, jnp.clip(action_p1, 0, 3)], 4],
+    )
+    pri_1 = jnp.where(
+        action_p2 >= 4,
+        6,
+        MOVE_TABLE[state.active_moves[1, jnp.clip(action_p2, 0, 3)], 4],
+    )
 
-    spe_0 = state.active_stats[0, 5] * get_stage_multiplier(state.active_boosts[0, 4]) * jnp.where(state.active_status[0] == STATUS_PAR, 0.5, 1.0)
-    spe_1 = state.active_stats[1, 5] * get_stage_multiplier(state.active_boosts[1, 4]) * jnp.where(state.active_status[1] == STATUS_PAR, 0.5, 1.0)
+    spe_0 = (
+        state.active_stats[0, 5]
+        * get_stage_multiplier(state.active_boosts[0, 4])
+        * jnp.where(state.active_status[0] == STATUS_PAR, 0.5, 1.0)
+    )
+    spe_1 = (
+        state.active_stats[1, 5]
+        * get_stage_multiplier(state.active_boosts[1, 4])
+        * jnp.where(state.active_status[1] == STATUS_PAR, 0.5, 1.0)
+    )
 
-    p1_first = (pri_0 > pri_1) | ((pri_0 == pri_1) & (spe_0 > spe_1)) | ((pri_0 == pri_1) & (spe_0 == spe_1) & tie_breaker)
+    p1_first = (
+        (pri_0 > pri_1)
+        | ((pri_0 == pri_1) & (spe_0 > spe_1))
+        | ((pri_0 == pri_1) & (spe_0 == spe_1) & tie_breaker)
+    )
 
     first_p = jnp.where(p1_first, 0, 1)
     second_p = 1 - first_p
@@ -326,7 +388,9 @@ def step(
     first_roll = jnp.where(p1_first, rng_roll1, rng_roll2)
     second_roll = jnp.where(p1_first, rng_roll2, rng_roll1)
 
-    def execute_actor(s: BattleState, act: jnp.ndarray, p_idx: int, roll: jnp.ndarray) -> BattleState:
+    def execute_actor(
+        s: BattleState, act: jnp.ndarray, p_idx: int, roll: jnp.ndarray
+    ) -> BattleState:
         is_switch = act >= 4
         bench_slot = act - 3
         move_slot = jnp.clip(act, 0, 3)
@@ -352,7 +416,11 @@ def step(
 
     def apply_status_dmg(st: BattleState, p: int) -> BattleState:
         st_val = st.active_status[p]
-        dmg_frac = jnp.where(st_val == STATUS_BRN, 1.0 / 16.0, jnp.where(st_val == STATUS_PSN, 1.0 / 8.0, 0.0))
+        dmg_frac = jnp.where(
+            st_val == STATUS_BRN,
+            1.0 / 16.0,
+            jnp.where(st_val == STATUS_PSN, 1.0 / 8.0, 0.0),
+        )
         dmg = jnp.floor(st.active_max_hp[p] * dmg_frac)
         curr = jnp.maximum(st.active_current_hp[p] - dmg, 0.0)
         hp = curr / st.active_max_hp[p]
@@ -375,7 +443,9 @@ def step(
     turn_limit_reached = s8.turn_count >= 100
 
     done = (~p1_has_alive) | (~p2_has_alive) | turn_limit_reached
-    winner = jnp.where(p1_has_alive & ~p2_has_alive, 1, jnp.where(p2_has_alive & ~p1_has_alive, 2, 0))
+    winner = jnp.where(
+        p1_has_alive & ~p2_has_alive, 1, jnp.where(p2_has_alive & ~p1_has_alive, 2, 0)
+    )
 
     p1_team_hp = jnp.mean(s8.team_hp[0])
     p2_team_hp = jnp.mean(s8.team_hp[1])

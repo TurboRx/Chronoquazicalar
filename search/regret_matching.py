@@ -3,6 +3,7 @@ Counterfactual Regret Matching (CFR) solver for two-player simultaneous games.
 """
 
 from typing import Tuple
+
 import numpy as np
 
 
@@ -35,11 +36,19 @@ def solve_matrix_game_cfr(
     for _ in range(num_iterations):
         pos_regrets_p1 = np.maximum(regrets_p1, regret_floor)
         sum_pos_p1 = np.sum(pos_regrets_p1)
-        sigma_p1 = (pos_regrets_p1 / sum_pos_p1) if sum_pos_p1 > 1e-12 else np.full(m, 1.0 / m, dtype=np.float64)
+        sigma_p1 = (
+            (pos_regrets_p1 / sum_pos_p1)
+            if sum_pos_p1 > 1e-12
+            else np.full(m, 1.0 / m, dtype=np.float64)
+        )
 
         pos_regrets_p2 = np.maximum(regrets_p2, regret_floor)
         sum_pos_p2 = np.sum(pos_regrets_p2)
-        sigma_p2 = (pos_regrets_p2 / sum_pos_p2) if sum_pos_p2 > 1e-12 else np.full(n, 1.0 / n, dtype=np.float64)
+        sigma_p2 = (
+            (pos_regrets_p2 / sum_pos_p2)
+            if sum_pos_p2 > 1e-12
+            else np.full(n, 1.0 / n, dtype=np.float64)
+        )
 
         strategy_sum_p1 += sigma_p1
         strategy_sum_p2 += sigma_p2
@@ -50,8 +59,8 @@ def solve_matrix_game_cfr(
         u2_action = -np.dot(sigma_p1, payoff_matrix)
         u2_expected = -u1_expected
 
-        regrets_p1 += (u1_action - u1_expected)
-        regrets_p2 += (u2_action - u2_expected)
+        regrets_p1 += u1_action - u1_expected
+        regrets_p2 += u2_action - u2_expected
 
     sum_s1 = np.sum(strategy_sum_p1)
     p1_strategy = (strategy_sum_p1 / sum_s1) if sum_s1 > 1e-12 else np.full(m, 1.0 / m)

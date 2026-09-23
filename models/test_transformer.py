@@ -6,15 +6,15 @@ for ChronosTransformer and damage heuristic.
 
 import time
 import unittest
+
 import jax
 import jax.numpy as jnp
 
-from engine.jax_battle_engine import init_battle, get_valid_actions_mask
-from engine.damage_calc import get_min_roll_damages, check_guaranteed_ko
+from engine.damage_calc import check_guaranteed_ko, get_min_roll_damages
+from engine.jax_battle_engine import init_battle
 from models.transformer_policy import (
     ChronosTransformer,
     state_to_model_inputs,
-    batch_state_to_model_inputs,
 )
 
 
@@ -27,7 +27,9 @@ class TestTransformerPolicy(unittest.TestCase):
         self.p1_moves = jnp.array([[800, 280, 750, 220]] * 6, dtype=jnp.int32)
         self.p2_moves = jnp.array([[280, 750, 220, 800]] * 6, dtype=jnp.int32)
 
-        self.state = init_battle(self.rng, self.p1_team, self.p2_team, self.p1_moves, self.p2_moves)
+        self.state = init_battle(
+            self.rng, self.p1_team, self.p2_team, self.p1_moves, self.p2_moves
+        )
         self.model = ChronosTransformer()
 
     def test_parameter_count(self):
@@ -38,7 +40,9 @@ class TestTransformerPolicy(unittest.TestCase):
 
         # Count parameters
         num_params = sum(x.size for x in jax.tree_util.tree_leaves(params))
-        print(f"\n[✓] ChronosTransformer Total Parameter Count: {num_params:,} (~{num_params / 1e6:.2f}M)")
+        print(
+            f"\n[✓] ChronosTransformer Total Parameter Count: {num_params:,} (~{num_params / 1e6:.2f}M)"
+        )
 
         # Verify close to ~8.5M (between 6.0M and 10.0M)
         self.assertGreater(num_params, 6_000_000)
@@ -81,7 +85,9 @@ class TestTransformerPolicy(unittest.TestCase):
         boosts_faster = self.state.active_boosts.at[0, 4].set(2)
         low_hp_faster = low_hp_slower.replace(active_boosts=boosts_faster)
         has_ko, best_act = check_guaranteed_ko(low_hp_faster, player_idx=0)
-        print(f"[✓] Outspeeding Low HP scenario -> Guaranteed KO detected: {bool(has_ko)}, Best Action: {int(best_act)}")
+        print(
+            f"[✓] Outspeeding Low HP scenario -> Guaranteed KO detected: {bool(has_ko)}, Best Action: {int(best_act)}"
+        )
         self.assertTrue(bool(has_ko))
         self.assertIn(int(best_act), [0, 1, 2, 3])
 

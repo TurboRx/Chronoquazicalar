@@ -19,10 +19,13 @@ def deploy_to_huggingface(
     commit_message: Optional[str] = None,
     commit_description: Optional[str] = None,
 ) -> bool:
-    hf_token = token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+    hf_token = (
+        token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+    )
     if not hf_token:
         try:
             from huggingface_hub import get_token
+
             hf_token = get_token()
         except Exception:
             pass
@@ -32,7 +35,10 @@ def deploy_to_huggingface(
 
     api = HfApi(token=hf_token)
     msg = commit_message or f"feat(weights): update {checkpoint_path.name}"
-    desc = commit_description or "Chronos Transformer policy & value network for Gen 9 Random Battles (PPO self-play in JAX)."
+    desc = (
+        commit_description
+        or "Chronos Transformer policy & value network for Gen 9 Random Battles (PPO self-play in JAX)."
+    )
 
     try:
         api.create_repo(repo_id=repo_id, private=True, exist_ok=True, repo_type="model")
@@ -68,7 +74,12 @@ def deploy_to_huggingface(
             repo_type="model",
         )
 
-        mechanics_path = Path(__file__).resolve().parent.parent / "engine" / "data" / "mechanics_tables.npz"
+        mechanics_path = (
+            Path(__file__).resolve().parent.parent
+            / "engine"
+            / "data"
+            / "mechanics_tables.npz"
+        )
         if mechanics_path.exists():
             api.upload_file(
                 path_or_fileobj=str(mechanics_path),
@@ -77,7 +88,7 @@ def deploy_to_huggingface(
                 repo_type="model",
             )
 
-        readme_content = f"""---
+        readme_content = """---
 license: mit
 pipeline_tag: reinforcement-learning
 tags:
@@ -119,8 +130,18 @@ Transformer policy and value network (~8.5M parameters) for Pokémon Showdown Ge
 
 def main():
     parser = argparse.ArgumentParser(description="Deploy checkpoint to Hugging Face")
-    parser.add_argument("--repo-id", type=str, default="chronos-gen9-randbats", help="Repo ID (e.g. username/repo)")
-    parser.add_argument("--checkpoint", type=str, default="checkpoints/bc_checkpoint_latest.pkl", help="Checkpoint path")
+    parser.add_argument(
+        "--repo-id",
+        type=str,
+        default="chronos-gen9-randbats",
+        help="Repo ID (e.g. username/repo)",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default="checkpoints/bc_checkpoint_latest.pkl",
+        help="Checkpoint path",
+    )
     parser.add_argument("--token", type=str, help="Hugging Face token")
     parser.add_argument("--message", type=str, help="Commit message")
     parser.add_argument("--description", type=str, help="Commit description")

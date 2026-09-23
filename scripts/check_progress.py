@@ -57,15 +57,23 @@ def display_progress():
             print(f"Completed Updates:        {data.get('total_updates', 0):,}")
             print(f"Total Turns Simulated:    {data.get('total_turns', 0):,}")
             print(f"Total Battles Completed:  {data.get('total_battles', 0):,}")
-            print(f"Win Rate vs Baseline:     {data.get('win_rate_vs_baseline', 0.0) * 100:.1f}%")
-            print(f"Estimated Elo Rating:     {data.get('estimated_elo', 1000):.0f} (Base: 1000)")
+            print(
+                f"Win Rate vs Baseline:     {data.get('win_rate_vs_baseline', 0.0) * 100:.1f}%"
+            )
+            print(
+                f"Estimated Elo Rating:     {data.get('estimated_elo', 1000):.0f} (Base: 1000)"
+            )
             print(f"Policy Loss:              {data.get('policy_loss', 0.0):.4f}")
             print(f"Value Loss:               {data.get('value_loss', 0.0):.4f}")
-            print(f"Training Complete:        {'YES' if data.get('is_complete') else 'NO (In Progress)'}")
+            print(
+                f"Training Complete:        {'YES' if data.get('is_complete') else 'NO (In Progress)'}"
+            )
         except Exception as e:
             print(f"[!] Could not parse metrics file: {e}")
     else:
-        print("\n[i] Metrics file will appear as soon as the first 30-minute checkpoint completes.")
+        print(
+            "\n[i] Metrics file will appear as soon as the first 30-minute checkpoint completes."
+        )
 
     print("================================================================")
 

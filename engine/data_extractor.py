@@ -7,16 +7,31 @@ move data, and type chart into compact NumPy arrays for the JAX engine.
 
 import json
 from pathlib import Path
-from typing import Dict, List, Tuple
-import numpy as np
+from typing import Dict, Tuple
 
-from poke_env.data import GenData, to_id_str
+import numpy as np
+from poke_env.data import GenData
 
 # Fixed standard 18 types
 TYPE_LIST = [
-    "NORMAL", "FIRE", "WATER", "GRASS", "ELECTRIC", "ICE",
-    "FIGHTING", "POISON", "GROUND", "FLYING", "PSYCHIC", "BUG",
-    "ROCK", "GHOST", "DRAGON", "STEEL", "DARK", "FAIRY"
+    "NORMAL",
+    "FIRE",
+    "WATER",
+    "GRASS",
+    "ELECTRIC",
+    "ICE",
+    "FIGHTING",
+    "POISON",
+    "GROUND",
+    "FLYING",
+    "PSYCHIC",
+    "BUG",
+    "ROCK",
+    "GHOST",
+    "DRAGON",
+    "STEEL",
+    "DARK",
+    "FAIRY",
 ]
 TYPE_TO_IDX: Dict[str, int] = {t: i for i, t in enumerate(TYPE_LIST)}
 NUM_TYPES = len(TYPE_LIST)
@@ -40,7 +55,9 @@ def build_type_chart(gen_data: GenData) -> np.ndarray:
     return chart
 
 
-def extract_species_and_moves(gen_data: GenData) -> Tuple[Dict, Dict, np.ndarray, np.ndarray]:
+def extract_species_and_moves(
+    gen_data: GenData,
+) -> Tuple[Dict, Dict, np.ndarray, np.ndarray]:
     """
     Extracts species and moves into indexed tables.
     Returns:
@@ -54,10 +71,14 @@ def extract_species_and_moves(gen_data: GenData) -> Tuple[Dict, Dict, np.ndarray
 
     # Species mapping
     species_list = sorted(list(pokedex.keys()))
-    species_to_idx = {sp: i + 1 for i, sp in enumerate(species_list)}  # 0 is reserved for None/Empty
+    species_to_idx = {
+        sp: i + 1 for i, sp in enumerate(species_list)
+    }  # 0 is reserved for None/Empty
     # Move mapping
     move_list = sorted(list(moves.keys()))
-    move_to_idx = {mv: i + 1 for i, mv in enumerate(move_list)}  # 0 is reserved for None/Empty
+    move_to_idx = {
+        mv: i + 1 for i, mv in enumerate(move_list)
+    }  # 0 is reserved for None/Empty
 
     # Build species table: (N_species + 1, 8)
     species_table = np.zeros((len(species_list) + 1, 8), dtype=np.int32)
@@ -104,7 +125,9 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     type_chart = build_type_chart(gen_data)
-    species_to_idx, move_to_idx, species_table, move_table = extract_species_and_moves(gen_data)
+    species_to_idx, move_to_idx, species_table, move_table = extract_species_and_moves(
+        gen_data
+    )
 
     out_npz = out_dir / "mechanics_tables.npz"
     np.savez_compressed(

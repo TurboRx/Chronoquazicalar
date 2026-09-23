@@ -87,9 +87,12 @@ def backup_to_huggingface() -> bool:
         cmd = [
             sys.executable,
             str(BASE_DIR / "scripts" / "deploy_hf.py"),
-            "--repo-id", HF_REPO_ID,
-            "--checkpoint", str(ckpt),
-            "--token", HF_TOKEN,
+            "--repo-id",
+            HF_REPO_ID,
+            "--checkpoint",
+            str(ckpt),
+            "--token",
+            HF_TOKEN,
         ]
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         return res.returncode == 0
@@ -123,7 +126,9 @@ def relaunch_kaggle_kernel() -> bool:
 
 
 def run_watchdog():
-    log(f"Watchdog started for {KAGGLE_KERNEL_SLUG} (poll interval: {POLL_INTERVAL_SEC}s)")
+    log(
+        f"Watchdog started for {KAGGLE_KERNEL_SLUG} (poll interval: {POLL_INTERVAL_SEC}s)"
+    )
 
     while True:
         try:
@@ -131,8 +136,14 @@ def run_watchdog():
             log(f"Status: {status_line}")
 
             status_lower = status_line.lower()
-            if "complete" in status_lower or "stopped" in status_lower or "error" in status_lower:
-                log("Kernel stopped. Executing recovery: download -> backup -> relaunch")
+            if (
+                "complete" in status_lower
+                or "stopped" in status_lower
+                or "error" in status_lower
+            ):
+                log(
+                    "Kernel stopped. Executing recovery: download -> backup -> relaunch"
+                )
                 download_latest_checkpoint()
                 backup_to_huggingface()
                 relaunch_kaggle_kernel()

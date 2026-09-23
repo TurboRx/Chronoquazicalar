@@ -6,18 +6,16 @@ Wraps the Transformer policy, heuristic KO checks, and pUCT search.
 import argparse
 import asyncio
 import json
-import os
 import pickle
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 from poke_env.battle.battle import Battle
+from poke_env.player import Player, SimpleHeuristicsPlayer
 from poke_env.player.battle_order import BattleOrder
-from poke_env.player import Player, RandomPlayer, SimpleHeuristicsPlayer
 from poke_env.ps_client.account_configuration import AccountConfiguration
 from poke_env.ps_client.server_configuration import (
     LocalhostServerConfiguration,
@@ -25,27 +23,15 @@ from poke_env.ps_client.server_configuration import (
 )
 
 from engine.battle_state import (
-    BattleState,
-    STATUS_NONE,
-    STATUS_BRN,
-    STATUS_PAR,
-    STATUS_PSN,
-    STATUS_TOX,
-    STATUS_SLP,
-    STATUS_FRZ,
     WEATHER_NONE,
-    WEATHER_SUN,
     WEATHER_RAIN,
     WEATHER_SAND,
     WEATHER_SNOW,
-    TERRAIN_NONE,
-    TERRAIN_ELECTRIC,
-    TERRAIN_GRASSY,
-    TERRAIN_MISTY,
-    TERRAIN_PSYCHIC,
+    WEATHER_SUN,
+    BattleState,
 )
 from engine.damage_calc import check_guaranteed_ko
-from engine.jax_battle_engine import init_battle, MOVE_TABLE, TYPE_CHART
+from engine.jax_battle_engine import MOVE_TABLE, TYPE_CHART, init_battle
 from engine.randbats_knowledge import RandbatsKnowledgeBase
 from models.transformer_policy import ChronosTransformer, state_to_model_inputs
 from search.puct_search import PUCTSearchEngine
@@ -67,7 +53,9 @@ class ChronosPlayer(Player):
             **kwargs,
         )
 
-        mappings_path = Path(__file__).resolve().parent / "engine" / "data" / "id_mappings.json"
+        mappings_path = (
+            Path(__file__).resolve().parent / "engine" / "data" / "id_mappings.json"
+        )
         if mappings_path.exists():
             with open(mappings_path, "r") as f:
                 data = json.load(f)
@@ -107,7 +95,9 @@ class ChronosPlayer(Player):
     def _warmup_jit(self, dummy_state: BattleState) -> None:
         try:
             _ = self.searcher.evaluate_state(dummy_state)
-            _ = self.searcher.search(dummy_state, max_simulations=1, time_limit_sec=10.0)
+            _ = self.searcher.search(
+                dummy_state, max_simulations=1, time_limit_sec=10.0
+            )
         except Exception:
             pass
 
@@ -117,11 +107,15 @@ class ChronosPlayer(Player):
         override_opp_active_moves: Optional[List[int]] = None,
     ) -> BattleState:
         act_p1 = battle.active_pokemon
-        act_sp_id_1 = self.species_to_idx.get(act_p1.species if act_p1 else "pikachu", 950)
+        act_sp_id_1 = self.species_to_idx.get(
+            act_p1.species if act_p1 else "pikachu", 950
+        )
         act_hp_1 = act_p1.current_hp_fraction if act_p1 else 1.0
 
         act_p2 = battle.opponent_active_pokemon
-        act_sp_id_2 = self.species_to_idx.get(act_p2.species if act_p2 else "charizard", 230)
+        act_sp_id_2 = self.species_to_idx.get(
+            act_p2.species if act_p2 else "charizard", 230
+        )
         act_hp_2 = act_p2.current_hp_fraction if act_p2 else 1.0
 
         p1_mvs = [0, 0, 0, 0]
@@ -161,12 +155,16 @@ class ChronosPlayer(Player):
 
         boosts_p1 = [0] * 7
         if act_p1 and act_p1.boosts:
-            for i, stat in enumerate(["atk", "def", "spa", "spd", "spe", "accuracy", "evasion"]):
+            for i, stat in enumerate(
+                ["atk", "def", "spa", "spd", "spe", "accuracy", "evasion"]
+            ):
                 boosts_p1[i] = act_p1.boosts.get(stat, 0)
 
         boosts_p2 = [0] * 7
         if act_p2 and act_p2.boosts:
-            for i, stat in enumerate(["atk", "def", "spa", "spd", "spe", "accuracy", "evasion"]):
+            for i, stat in enumerate(
+                ["atk", "def", "spa", "spd", "spe", "accuracy", "evasion"]
+            ):
                 boosts_p2[i] = act_p2.boosts.get(stat, 0)
 
         weather = WEATHER_NONE
@@ -188,8 +186,12 @@ class ChronosPlayer(Player):
         if override_opp_active_moves is not None:
             p2_mvs = override_opp_active_moves
         else:
-            p2_revealed = [m.id for m in act_p2.moves.values()] if act_p2 and act_p2.moves else []
-            _, p2_mvs = self.kb.predict_moves(act_p2.species if act_p2 else "charizard", p2_revealed)
+            p2_revealed = (
+                [m.id for m in act_p2.moves.values()] if act_p2 and act_p2.moves else []
+            )
+            _, p2_mvs = self.kb.predict_moves(
+                act_p2.species if act_p2 else "charizard", p2_revealed
+            )
 
         # Opponent team moves
         p2_team_moves = [p2_mvs]
@@ -242,12 +244,22 @@ class ChronosPlayer(Player):
         if act_p2:
             p2_revealed = [m.id for m in act_p2.moves.values()] if act_p2.moves else []
             _, opp_mvs = self.kb.predict_moves(act_p2.species, p2_revealed)
-            my_t1 = self.type_to_idx.get(act_p1.type_1.name.upper(), 0) if act_p1.type_1 else 0
-            my_t2 = self.type_to_idx.get(act_p1.type_2.name.upper(), -1) if act_p1.type_2 else -1
+            my_t1 = (
+                self.type_to_idx.get(act_p1.type_1.name.upper(), 0)
+                if act_p1.type_1
+                else 0
+            )
+            my_t2 = (
+                self.type_to_idx.get(act_p1.type_2.name.upper(), -1)
+                if act_p1.type_2
+                else -1
+            )
 
             for m_id in opp_mvs:
                 m_type = int(MOVE_TABLE[m_id, 0])
-                base_eff = float(TYPE_CHART[m_type, my_t1]) * (float(TYPE_CHART[m_type, my_t2]) if my_t2 >= 0 else 1.0)
+                base_eff = float(TYPE_CHART[m_type, my_t1]) * (
+                    float(TYPE_CHART[m_type, my_t2]) if my_t2 >= 0 else 1.0
+                )
                 tera_eff = float(TYPE_CHART[m_type, my_tera_idx])
 
                 if base_eff >= 2.0 and tera_eff <= 0.5:
@@ -255,7 +267,11 @@ class ChronosPlayer(Player):
 
         # 2. Offensive STAB Tera: Secure lethal game-winning KO
         if target_move:
-            mv_type_str = target_move.type.name.upper() if hasattr(target_move.type, "name") else str(target_move.type).upper()
+            mv_type_str = (
+                target_move.type.name.upper()
+                if hasattr(target_move.type, "name")
+                else str(target_move.type).upper()
+            )
             mv_type_idx = self.type_to_idx.get(mv_type_str, -1)
             if mv_type_idx == my_tera_idx and act_p2 and act_p2.current_hp_fraction:
                 if 0.40 <= act_p2.current_hp_fraction <= 0.85:
@@ -270,6 +286,7 @@ class ChronosPlayer(Player):
     def choose_move(self, battle: Battle) -> BattleOrder:
         state = self._battle_to_battle_state(battle)
         act_p1 = battle.active_pokemon
+        act_p2 = battle.opponent_active_pokemon
         all_moves = list(act_p1.moves.values()) if act_p1 and act_p1.moves else []
         bench_pkms = [pkm for pkm in battle.team.values() if pkm != act_p1]
 
@@ -286,8 +303,12 @@ class ChronosPlayer(Player):
 
         # 2. Search policy resolution with scenario determinization
         opp_sp = act_p2.species if act_p2 else "charizard"
-        p2_revealed = [m.id for m in act_p2.moves.values()] if act_p2 and act_p2.moves else []
-        scenarios = self.kb.get_candidate_move_scenarios(opp_sp, p2_revealed, max_scenarios=2)
+        p2_revealed = (
+            [m.id for m in act_p2.moves.values()] if act_p2 and act_p2.moves else []
+        )
+        scenarios = self.kb.get_candidate_move_scenarios(
+            opp_sp, p2_revealed, max_scenarios=2
+        )
 
         if len(scenarios) <= 1:
             chosen_act, strategy, _ = self.searcher.search(
@@ -302,7 +323,9 @@ class ChronosPlayer(Player):
             sims_per_scenario = max(40, 100 // len(scenarios))
 
             for _, scen_ids, weight in scenarios:
-                scen_state = self._battle_to_battle_state(battle, override_opp_active_moves=scen_ids)
+                scen_state = self._battle_to_battle_state(
+                    battle, override_opp_active_moves=scen_ids
+                )
                 _, scen_strat, _ = self.searcher.search(
                     scen_state,
                     time_limit_sec=time_per_scenario,
@@ -347,7 +370,9 @@ class ChronosPlayer(Player):
         # 5. Standard switch selection (actions 4..8)
         elif chosen_act >= 4 and battle.available_switches:
             switch_slot = chosen_act - 4
-            target_pkm = bench_pkms[switch_slot] if switch_slot < len(bench_pkms) else None
+            target_pkm = (
+                bench_pkms[switch_slot] if switch_slot < len(bench_pkms) else None
+            )
             if target_pkm and target_pkm in battle.available_switches:
                 return self.create_order(target_pkm)
             # Fallback: best available switch by strategy probability
@@ -375,7 +400,9 @@ class ChronosPlayer(Player):
         return self.choose_random_move(battle)
 
 
-async def run_local_battles(num_battles: int = 5, checkpoint_path: Optional[Path] = None):
+async def run_local_battles(
+    num_battles: int = 5, checkpoint_path: Optional[Path] = None
+):
     chronos = ChronosPlayer(
         checkpoint_path=checkpoint_path,
         search_time_budget=1.0,
@@ -389,7 +416,9 @@ async def run_local_battles(num_battles: int = 5, checkpoint_path: Optional[Path
 
     await chronos.battle_against(opponent, n_battles=num_battles)
 
-    print(f"Chronos: {chronos.n_won_battles}/{num_battles} wins ({chronos.n_won_battles / num_battles * 100:.1f}%)")
+    print(
+        f"Chronos: {chronos.n_won_battles}/{num_battles} wins ({chronos.n_won_battles / num_battles * 100:.1f}%)"
+    )
     print(f"Opponent: {opponent.n_won_battles}/{num_battles} wins")
 
 
@@ -414,9 +443,18 @@ async def run_ladder(
 
 def main():
     parser = argparse.ArgumentParser(description="Pokémon Showdown bot client")
-    parser.add_argument("--test-local", action="store_true", help="Run local battles against baseline player")
+    parser.add_argument(
+        "--test-local",
+        action="store_true",
+        help="Run local battles against baseline player",
+    )
     parser.add_argument("--battles", type=int, default=5, help="Number of battles")
-    parser.add_argument("--checkpoint", type=str, default="checkpoints/bc_checkpoint_latest.pkl", help="Path to checkpoint")
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default="checkpoints/bc_checkpoint_latest.pkl",
+        help="Path to checkpoint",
+    )
     parser.add_argument("--ladder", action="store_true", help="Queue on public ladder")
     parser.add_argument("--username", type=str, help="Showdown account username")
     parser.add_argument("--password", type=str, help="Showdown account password")
@@ -428,9 +466,18 @@ def main():
         if not args.username or not args.password:
             print("Error: --username and --password are required for ladder mode")
             return
-        asyncio.run(run_ladder(args.username, args.password, checkpoint_path=ckpt_path, num_battles=args.battles))
+        asyncio.run(
+            run_ladder(
+                args.username,
+                args.password,
+                checkpoint_path=ckpt_path,
+                num_battles=args.battles,
+            )
+        )
     else:
-        asyncio.run(run_local_battles(num_battles=args.battles, checkpoint_path=ckpt_path))
+        asyncio.run(
+            run_local_battles(num_battles=args.battles, checkpoint_path=ckpt_path)
+        )
 
 
 if __name__ == "__main__":

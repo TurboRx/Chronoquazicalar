@@ -2,18 +2,17 @@
 Damage calculation and deterministic KO heuristics for search pruning.
 """
 
-from typing import Optional, Tuple
+from typing import Tuple
+
 import jax
 import jax.numpy as jnp
 
 from engine.battle_state import BattleState
 from engine.jax_battle_engine import (
+    MOVE_TABLE,
+    STATUS_PAR,
     calc_raw_damage,
     get_stage_multiplier,
-    MOVE_TABLE,
-    SPECIES_TABLE,
-    TYPE_CHART,
-    STATUS_PAR,
 )
 
 
@@ -40,7 +39,9 @@ def get_min_roll_damages(state: BattleState, player_idx: int = 0) -> jnp.ndarray
 
 
 @jax.jit
-def check_guaranteed_ko(state: BattleState, player_idx: int = 0) -> Tuple[jnp.ndarray, jnp.ndarray]:
+def check_guaranteed_ko(
+    state: BattleState, player_idx: int = 0
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """
     Returns (has_ko, best_action).
     has_ko is True if any valid move guarantees KO under minimum damage roll and outspeeds.
@@ -54,11 +55,19 @@ def check_guaranteed_ko(state: BattleState, player_idx: int = 0) -> Tuple[jnp.nd
     move_valid = (state.active_moves[player_idx] > 0) & pp_valid
     is_ko = (min_damages >= opp_curr_hp) & move_valid & (min_damages > 0)
 
-    my_spe = state.active_stats[player_idx, 5] * get_stage_multiplier(state.active_boosts[player_idx, 4])
-    my_spe = jnp.where(state.active_status[player_idx] == STATUS_PAR, my_spe * 0.5, my_spe)
+    my_spe = state.active_stats[player_idx, 5] * get_stage_multiplier(
+        state.active_boosts[player_idx, 4]
+    )
+    my_spe = jnp.where(
+        state.active_status[player_idx] == STATUS_PAR, my_spe * 0.5, my_spe
+    )
 
-    opp_spe = state.active_stats[opp_idx, 5] * get_stage_multiplier(state.active_boosts[opp_idx, 4])
-    opp_spe = jnp.where(state.active_status[opp_idx] == STATUS_PAR, opp_spe * 0.5, opp_spe)
+    opp_spe = state.active_stats[opp_idx, 5] * get_stage_multiplier(
+        state.active_boosts[opp_idx, 4]
+    )
+    opp_spe = jnp.where(
+        state.active_status[opp_idx] == STATUS_PAR, opp_spe * 0.5, opp_spe
+    )
 
     outspeeds = my_spe > opp_spe
 

@@ -44,7 +44,9 @@ def update_datasets(showdown_dir: Path) -> bool:
         print("randbats_sets.json is already up-to-date with upstream.")
 
     # Re-run data_extractor.py to ensure mechanics tables and mappings are in sync
-    extractor_path = Path(__file__).resolve().parent.parent / "engine" / "data_extractor.py"
+    extractor_path = (
+        Path(__file__).resolve().parent.parent / "engine" / "data_extractor.py"
+    )
     if extractor_path.exists():
         print("Synchronizing mechanics tables and mappings via data_extractor.py...")
         subprocess.run([sys.executable, str(extractor_path)], check=True)
@@ -53,7 +55,9 @@ def update_datasets(showdown_dir: Path) -> bool:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Update Chronos datasets from smogon/pokemon-showdown")
+    parser = argparse.ArgumentParser(
+        description="Update Chronos datasets from smogon/pokemon-showdown"
+    )
     parser.add_argument(
         "--showdown-dir",
         type=Path,
