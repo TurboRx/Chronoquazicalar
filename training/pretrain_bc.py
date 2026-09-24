@@ -2,11 +2,10 @@
 Supervised Behavioral Cloning for policy initialization.
 """
 
-import os
 import pickle
 import time
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict
 
 import jax
 import jax.numpy as jnp
@@ -19,6 +18,7 @@ from models.transformer_policy import ChronosTransformer
 def load_dataset(data_path: Path) -> Dict[str, np.ndarray]:
     if not data_path.exists():
         from data.replay_scraper import generate_synthetic_randbats_demonstrations, save_dataset
+
         dataset = generate_synthetic_randbats_demonstrations(num_samples=2500)
         save_dataset(dataset, data_path)
     return dict(np.load(data_path))
@@ -42,11 +42,22 @@ def train_bc(
     num_samples = len(data["actions"])
 
     model = ChronosTransformer()
-    sample_inputs = {k: jnp.array(data[k][:1]) for k in [
-        "act_species", "act_types", "act_continuous",
-        "bench_species_p1", "bench_cont_p1", "bench_species_p2", "bench_cont_p2",
-        "active_moves", "move_types", "move_continuous", "field_features"
-    ]}
+    sample_inputs = {
+        k: jnp.array(data[k][:1])
+        for k in [
+            "act_species",
+            "act_types",
+            "act_continuous",
+            "bench_species_p1",
+            "bench_cont_p1",
+            "bench_species_p2",
+            "bench_cont_p2",
+            "active_moves",
+            "move_types",
+            "move_continuous",
+            "field_features",
+        ]
+    }
 
     rng, init_key = jax.random.split(rng)
     params = model.init(init_key, sample_inputs)

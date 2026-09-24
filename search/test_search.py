@@ -73,9 +73,7 @@ class TestSearchAndRegretMatching(unittest.TestCase):
         )
         elapsed = time.perf_counter() - start_t
 
-        print(
-            f"[✓] pUCT Search completed in {elapsed:.3f}s | Simulations: {stats['searched_simulations']}"
-        )
+        print(f"[✓] pUCT Search completed in {elapsed:.3f}s | Simulations: {stats['searched_simulations']}")
         print(f"[✓] Chosen Action: {chosen_act} | Strategy: {strat.round(3)}")
 
         # Verify time budget was strictly respected
@@ -106,9 +104,7 @@ class TestSearchAndRegretMatching(unittest.TestCase):
         searcher = PUCTSearchEngine(model=model, params=params)
         act, strat, stats = searcher.search(ko_state)
 
-        print(
-            f"[✓] Guaranteed KO heuristic triggered: {stats['heuristic_triggered']} | Action: {act}"
-        )
+        print(f"[✓] Guaranteed KO heuristic triggered: {stats['heuristic_triggered']} | Action: {act}")
         self.assertTrue(stats["heuristic_triggered"])
         self.assertEqual(stats["searched_simulations"], 0)
         self.assertIn(act, [0, 1, 2, 3])

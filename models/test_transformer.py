@@ -27,9 +27,7 @@ class TestTransformerPolicy(unittest.TestCase):
         self.p1_moves = jnp.array([[800, 280, 750, 220]] * 6, dtype=jnp.int32)
         self.p2_moves = jnp.array([[280, 750, 220, 800]] * 6, dtype=jnp.int32)
 
-        self.state = init_battle(
-            self.rng, self.p1_team, self.p2_team, self.p1_moves, self.p2_moves
-        )
+        self.state = init_battle(self.rng, self.p1_team, self.p2_team, self.p1_moves, self.p2_moves)
         self.model = ChronosTransformer()
 
     def test_parameter_count(self):
@@ -40,9 +38,7 @@ class TestTransformerPolicy(unittest.TestCase):
 
         # Count parameters
         num_params = sum(x.size for x in jax.tree_util.tree_leaves(params))
-        print(
-            f"\n[✓] ChronosTransformer Total Parameter Count: {num_params:,} (~{num_params / 1e6:.2f}M)"
-        )
+        print(f"\n[✓] ChronosTransformer Total Parameter Count: {num_params:,} (~{num_params / 1e6:.2f}M)")
 
         # Verify close to ~8.5M (between 6.0M and 10.0M)
         self.assertGreater(num_params, 6_000_000)

@@ -28,27 +28,21 @@ class TestJaxBattleEngine(unittest.TestCase):
         self.p2_moves = jnp.full((6, 4), 100, dtype=jnp.int32)
 
     def test_init_battle(self):
-        state = init_battle(
-            self.rng, self.p1_team, self.p2_team, self.p1_moves, self.p2_moves
-        )
+        state = init_battle(self.rng, self.p1_team, self.p2_team, self.p1_moves, self.p2_moves)
         self.assertEqual(state.active_hp.shape, (2,))
         self.assertEqual(state.team_alive.shape, (2, 6))
         self.assertTrue(bool(jnp.all(state.active_hp == 1.0)))
         self.assertFalse(bool(state.done))
 
     def test_valid_actions_mask(self):
-        state = init_battle(
-            self.rng, self.p1_team, self.p2_team, self.p1_moves, self.p2_moves
-        )
+        state = init_battle(self.rng, self.p1_team, self.p2_team, self.p1_moves, self.p2_moves)
         mask = get_valid_actions_mask(state)
         self.assertEqual(mask.shape, (2, 9))
         # Initially all 4 moves and 5 switches should be legal
         self.assertTrue(bool(jnp.all(mask)))
 
     def test_single_step(self):
-        state = init_battle(
-            self.rng, self.p1_team, self.p2_team, self.p1_moves, self.p2_moves
-        )
+        state = init_battle(self.rng, self.p1_team, self.p2_team, self.p1_moves, self.p2_moves)
         # Both choose move 0
         next_state, reward, done = step(state, jnp.array(0), jnp.array(0))
         self.assertEqual(next_state.turn_count, 1)
@@ -59,9 +53,7 @@ class TestJaxBattleEngine(unittest.TestCase):
         is_cpu = all(d.platform == "cpu" for d in devices)
         target_tps = 200.0 if is_cpu else 50000.0
 
-        print(
-            f"\n--- Benchmarking JAX Vectorized Battle Engine on {devices[0].platform.upper()} ---"
-        )
+        print(f"\n--- Benchmarking JAX Vectorized Battle Engine on {devices[0].platform.upper()} ---")
 
         for B in [512, 1024]:
             key = jax.random.PRNGKey(123)

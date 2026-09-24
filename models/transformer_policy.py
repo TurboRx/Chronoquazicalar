@@ -49,15 +49,11 @@ class ChronosTransformer(nn.Module):
     num_actions: int = 9
 
     def setup(self):
-        self.cls_token = self.param(
-            "cls_token", nn.initializers.normal(0.02), (1, 1, self.d_model)
-        )
+        self.cls_token = self.param("cls_token", nn.initializers.normal(0.02), (1, 1, self.d_model))
         self.species_embed = nn.Embed(NUM_SPECIES, self.d_model)
         self.move_embed = nn.Embed(NUM_MOVES, self.d_model)
         self.type_embed = nn.Embed(NUM_TYPES, self.d_model)
-        self.pos_embed = self.param(
-            "pos_embed", nn.initializers.normal(0.02), (1, SEQ_LEN, self.d_model)
-        )
+        self.pos_embed = self.param("pos_embed", nn.initializers.normal(0.02), (1, SEQ_LEN, self.d_model))
 
         self.active_dense = nn.Sequential(
             [
@@ -185,15 +181,11 @@ class ChronosTransformer(nn.Module):
         return masked_logits, action_probs, value
 
 
-def state_to_model_inputs(
-    state: BattleState, perspective_player: int = 0
-) -> Dict[str, jnp.ndarray]:
+def state_to_model_inputs(state: BattleState, perspective_player: int = 0) -> Dict[str, jnp.ndarray]:
     p = perspective_player
     opp = 1 - p
 
-    act_species = jnp.array(
-        [state.active_species[p], state.active_species[opp]], dtype=jnp.int32
-    )
+    act_species = jnp.array([state.active_species[p], state.active_species[opp]], dtype=jnp.int32)
 
     p_t2 = jnp.where(state.active_types[p, 1] >= 0, state.active_types[p, 1], 18)
     opp_t2 = jnp.where(state.active_types[opp, 1] >= 0, state.active_types[opp, 1], 18)
@@ -216,9 +208,7 @@ def state_to_model_inputs(
     act_cont = jnp.stack([make_active_cont(p), make_active_cont(opp)])
 
     bench_sp_p1 = state.team_species[p, 1:6]
-    bench_cont_p1 = jnp.stack(
-        [state.team_hp[p, 1:6], state.team_alive[p, 1:6].astype(jnp.float32)], axis=-1
-    )
+    bench_cont_p1 = jnp.stack([state.team_hp[p, 1:6], state.team_alive[p, 1:6].astype(jnp.float32)], axis=-1)
 
     bench_sp_p2 = state.team_species[opp, 1:6]
     bench_cont_p2 = jnp.stack(

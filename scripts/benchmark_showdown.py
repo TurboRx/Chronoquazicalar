@@ -39,9 +39,7 @@ def start_local_server(showdown_dir: Path, port: int = 8000) -> subprocess.Popen
             print("Local Pokémon Showdown server is ready!")
             return proc
         time.sleep(0.5)
-    raise TimeoutError(
-        "Failed to start local Pokémon Showdown server within 15 seconds."
-    )
+    raise TimeoutError("Failed to start local Pokémon Showdown server within 15 seconds.")
 
 
 async def benchmark(
@@ -52,9 +50,7 @@ async def benchmark(
 ):
     print("\n==========================================")
     print("PROJECT CHRONOS - SHOWDOWN BENCHMARK")
-    print(
-        f"Battles: {num_battles} | Opponent: {opponent_type} | Time Budget: {time_budget}s"
-    )
+    print(f"Battles: {num_battles} | Opponent: {opponent_type} | Time Budget: {time_budget}s")
     print("==========================================\n")
 
     ckpt = Path(checkpoint_path) if checkpoint_path else None
@@ -96,12 +92,8 @@ async def benchmark(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Benchmark Chronos against baseline players on local Showdown."
-    )
-    parser.add_argument(
-        "--battles", type=int, default=5, help="Number of benchmark battles"
-    )
+    parser = argparse.ArgumentParser(description="Benchmark Chronos against baseline players on local Showdown.")
+    parser.add_argument("--battles", type=int, default=5, help="Number of benchmark battles")
     parser.add_argument(
         "--opponent",
         type=str,
@@ -109,9 +101,7 @@ def main():
         default="heuristic",
         help="Opponent type",
     )
-    parser.add_argument(
-        "--checkpoint", type=str, default=None, help="Path to model weights checkpoint"
-    )
+    parser.add_argument("--checkpoint", type=str, default=None, help="Path to model weights checkpoint")
     parser.add_argument(
         "--time-budget",
         type=float,

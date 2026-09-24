@@ -19,9 +19,7 @@ def deploy_to_huggingface(
     commit_message: Optional[str] = None,
     commit_description: Optional[str] = None,
 ) -> bool:
-    hf_token = (
-        token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
-    )
+    hf_token = token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
     if not hf_token:
         try:
             from huggingface_hub import get_token
@@ -74,12 +72,7 @@ def deploy_to_huggingface(
             repo_type="model",
         )
 
-        mechanics_path = (
-            Path(__file__).resolve().parent.parent
-            / "engine"
-            / "data"
-            / "mechanics_tables.npz"
-        )
+        mechanics_path = Path(__file__).resolve().parent.parent / "engine" / "data" / "mechanics_tables.npz"
         if mechanics_path.exists():
             api.upload_file(
                 path_or_fileobj=str(mechanics_path),

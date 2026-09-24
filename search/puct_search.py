@@ -61,16 +61,12 @@ class PUCTSearchEngine:
         self.max_depth = max_depth
         self.default_time_limit_sec = default_time_limit_sec
 
-    def evaluate_state(
-        self, state: BattleState
-    ) -> Tuple[np.ndarray, np.ndarray, float]:
+    def evaluate_state(self, state: BattleState) -> Tuple[np.ndarray, np.ndarray, float]:
         inp_p1 = state_to_model_inputs(state, perspective_player=0)
         batched_p1 = {k: v[None, ...] for k, v in inp_p1.items()}
         mask = np.array(get_valid_actions_mask(state))
         mask_p1 = jnp.array(mask[0:1])
-        _, probs_p1, val_p1 = self.model.apply(
-            self.params, batched_p1, valid_mask=mask_p1
-        )
+        _, probs_p1, val_p1 = self.model.apply(self.params, batched_p1, valid_mask=mask_p1)
 
         inp_p2 = state_to_model_inputs(state, perspective_player=1)
         batched_p2 = {k: v[None, ...] for k, v in inp_p2.items()}

@@ -3,26 +3,26 @@ Replay scraper, tokenizer, and dataset utilities for Gen 9 Random Battles.
 """
 
 import json
-import os
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 import requests
 
-from engine.battle_state import BattleState
-from engine.jax_battle_engine import init_battle, get_valid_actions_mask, SPECIES_TABLE, MOVE_TABLE
+from engine.jax_battle_engine import get_valid_actions_mask, init_battle
 from models.transformer_policy import state_to_model_inputs
-import jax
-import jax.numpy as jnp
 
 REPLAY_SEARCH_URL = "https://replay.pokemonshowdown.com/search.json"
 REPLAY_BASE_URL = "https://replay.pokemonshowdown.com"
 
 
-def fetch_high_ladder_replays(format_id: str = "gen9randombattle", min_elo: int = 1600, max_pages: int = 5) -> List[str]:
+def fetch_high_ladder_replays(
+    format_id: str = "gen9randombattle", min_elo: int = 1600, max_pages: int = 5
+) -> List[str]:
     replay_ids = []
     headers = {"User-Agent": "Mozilla/5.0"}
 
@@ -52,12 +52,10 @@ def fetch_high_ladder_replays(format_id: str = "gen9randombattle", min_elo: int 
 def generate_synthetic_randbats_demonstrations(num_samples: int = 2000) -> Dict[str, np.ndarray]:
     rng = jax.random.PRNGKey(777)
 
-    sample_species = jnp.array([
-        950, 230, 150, 1380, 450, 1200, 300, 400, 500, 600, 700, 800, 900, 1000
-    ], dtype=jnp.int32)
-    sample_moves = jnp.array([
-        100, 200, 300, 400, 500, 600, 700, 800
-    ], dtype=jnp.int32)
+    sample_species = jnp.array(
+        [950, 230, 150, 1380, 450, 1200, 300, 400, 500, 600, 700, 800, 900, 1000], dtype=jnp.int32
+    )
+    sample_moves = jnp.array([100, 200, 300, 400, 500, 600, 700, 800], dtype=jnp.int32)
 
     all_inputs: Dict[str, List[np.ndarray]] = {
         "act_species": [],

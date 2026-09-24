@@ -45,9 +45,7 @@ def install_packages() -> None:
         subprocess.check_call(cmd)
 
 
-def setup_kaggle(
-    username: str | None = None, api_key: str | None = None, skip_prompt: bool = False
-) -> bool:
+def setup_kaggle(username: str | None = None, api_key: str | None = None, skip_prompt: bool = False) -> bool:
     kaggle_dir = Path.home() / ".kaggle"
     kaggle_json = kaggle_dir / "kaggle.json"
     access_token = kaggle_dir / "access_token"
@@ -143,9 +141,7 @@ def main() -> int:
         return 1
 
     install_packages()
-    k_ok = setup_kaggle(
-        args.kaggle_user, args.kaggle_key, skip_prompt=args.skip_auth_prompt
-    )
+    k_ok = setup_kaggle(args.kaggle_user, args.kaggle_key, skip_prompt=args.skip_auth_prompt)
     hf_ok = setup_huggingface(args.hf_token, skip_prompt=args.skip_auth_prompt)
 
     return 0 if (k_ok and hf_ok) else 2

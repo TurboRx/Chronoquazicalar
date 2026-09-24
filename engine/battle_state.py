@@ -43,9 +43,7 @@ class BattleState:
     active_max_hp: jnp.ndarray  # shape (2,), float32
     active_current_hp: jnp.ndarray  # shape (2,), float32
     active_stats: jnp.ndarray  # shape (2, 6), float32 [HP, Atk, Def, SpA, SpD, Spe]
-    active_boosts: (
-        jnp.ndarray
-    )  # shape (2, 7), int32 [Atk, Def, SpA, SpD, Spe, Acc, Eva] in [-6, 6]
+    active_boosts: jnp.ndarray  # shape (2, 7), int32 [Atk, Def, SpA, SpD, Spe, Acc, Eva] in [-6, 6]
     active_status: jnp.ndarray  # shape (2,), int32
     active_moves: jnp.ndarray  # shape (2, 4), int32
     active_move_pp: jnp.ndarray  # shape (2, 4), float32

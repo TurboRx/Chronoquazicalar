@@ -75,9 +75,7 @@ def calc_raw_damage(
         attacker_stats[1] * get_stage_multiplier(attacker_boosts[0]),
         attacker_stats[3] * get_stage_multiplier(attacker_boosts[2]),
     )
-    atk_val = jnp.where(
-        (m_cat == 0) & (attacker_status == STATUS_BRN), atk_val * 0.5, atk_val
-    )
+    atk_val = jnp.where((m_cat == 0) & (attacker_status == STATUS_BRN), atk_val * 0.5, atk_val)
 
     def_val = jnp.where(
         m_cat == 0,
@@ -97,9 +95,7 @@ def calc_raw_damage(
         jnp.where(weather == WEATHER_RAIN, rain_mod, 1.0),
     )
 
-    is_stab = (m_type == attacker_types[0]) | (
-        (attacker_types[1] >= 0) & (m_type == attacker_types[1])
-    )
+    is_stab = (m_type == attacker_types[0]) | ((attacker_types[1] >= 0) & (m_type == attacker_types[1]))
     stab_mod = jnp.where(is_stab, 1.5, 1.0)
 
     eff1 = TYPE_CHART[m_type, defender_types[0]]
@@ -109,20 +105,12 @@ def calc_raw_damage(
     mult = weather_mod * stab_mod * type_eff * rng_roll
     final_dmg = jnp.floor(base_dmg * mult)
 
-    return jnp.where(
-        is_damage_move & (type_eff > 0.0), jnp.maximum(final_dmg, 1.0), 0.0
-    )
+    return jnp.where(is_damage_move & (type_eff > 0.0), jnp.maximum(final_dmg, 1.0), 0.0)
 
 
-def calc_stats_from_base(
-    base_stats: jnp.ndarray, level: int = 80
-) -> Tuple[jnp.ndarray, jnp.ndarray]:
-    hp_stat = (
-        jnp.floor(((2.0 * base_stats[0] + 31.0 + 21.0) * level) / 100.0) + level + 10.0
-    )
-    other_stats = (
-        jnp.floor(((2.0 * base_stats[1:] + 31.0 + 21.0) * level) / 100.0) + 5.0
-    )
+def calc_stats_from_base(base_stats: jnp.ndarray, level: int = 80) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    hp_stat = jnp.floor(((2.0 * base_stats[0] + 31.0 + 21.0) * level) / 100.0) + level + 10.0
+    other_stats = jnp.floor(((2.0 * base_stats[1:] + 31.0 + 21.0) * level) / 100.0) + 5.0
     full_stats = jnp.concatenate([jnp.array([hp_stat]), other_stats])
     return hp_stat, full_stats
 
@@ -190,11 +178,7 @@ def init_battle(
 
 
 def get_valid_actions_mask(state: BattleState) -> jnp.ndarray:
-    move_valid = (
-        (state.active_moves > 0)
-        & (state.active_move_pp > 0)
-        & (state.active_hp[:, None] > 0)
-    )
+    move_valid = (state.active_moves > 0) & (state.active_move_pp > 0) & (state.active_hp[:, None] > 0)
     switch_valid = state.team_alive[:, 1:6]
     return jnp.concatenate([move_valid, switch_valid], axis=-1)
 
@@ -226,14 +210,10 @@ def execute_switch(
         0.125,
         jnp.where(spikes_layers == 2, 0.1667, jnp.where(spikes_layers >= 3, 0.25, 0.0)),
     )
-    spikes_dmg = jnp.where(
-        (spikes_layers > 0) & ~is_flying, jnp.floor(new_max_hp * spikes_frac), 0.0
-    )
+    spikes_dmg = jnp.where((spikes_layers > 0) & ~is_flying, jnp.floor(new_max_hp * spikes_frac), 0.0)
 
     total_hazard_dmg = sr_dmg + spikes_dmg
-    incoming_current_hp = jnp.maximum(
-        new_max_hp * state.team_hp[player_idx, bench_slot] - total_hazard_dmg, 0.0
-    )
+    incoming_current_hp = jnp.maximum(new_max_hp * state.team_hp[player_idx, bench_slot] - total_hazard_dmg, 0.0)
     incoming_hp_frac = incoming_current_hp / jnp.maximum(new_max_hp, 1.0)
     incoming_alive = incoming_hp_frac > 0
 
@@ -254,30 +234,10 @@ def execute_switch(
     act_mvs = state.active_moves.at[player_idx].set(new_act_mvs)
     act_pp = state.active_move_pp.at[player_idx].set(jnp.ones(4, dtype=jnp.float32))
 
-    team_sp = (
-        state.team_species.at[player_idx, 0]
-        .set(new_act_sp)
-        .at[player_idx, bench_slot]
-        .set(old_act_sp)
-    )
-    team_mvs = (
-        state.team_moves.at[player_idx, 0]
-        .set(new_act_mvs)
-        .at[player_idx, bench_slot]
-        .set(old_act_mvs)
-    )
-    team_hp = (
-        state.team_hp.at[player_idx, 0]
-        .set(incoming_hp_frac)
-        .at[player_idx, bench_slot]
-        .set(old_act_hp)
-    )
-    team_al = (
-        state.team_alive.at[player_idx, 0]
-        .set(incoming_alive)
-        .at[player_idx, bench_slot]
-        .set(old_act_alive)
-    )
+    team_sp = state.team_species.at[player_idx, 0].set(new_act_sp).at[player_idx, bench_slot].set(old_act_sp)
+    team_mvs = state.team_moves.at[player_idx, 0].set(new_act_mvs).at[player_idx, bench_slot].set(old_act_mvs)
+    team_hp = state.team_hp.at[player_idx, 0].set(incoming_hp_frac).at[player_idx, bench_slot].set(old_act_hp)
+    team_al = state.team_alive.at[player_idx, 0].set(incoming_alive).at[player_idx, bench_slot].set(old_act_alive)
 
     return state.replace(
         active_species=act_sp,
@@ -386,9 +346,7 @@ def step(
     )
 
     p1_first = (
-        (pri_0 > pri_1)
-        | ((pri_0 == pri_1) & (spe_0 > spe_1))
-        | ((pri_0 == pri_1) & (spe_0 == spe_1) & tie_breaker)
+        (pri_0 > pri_1) | ((pri_0 == pri_1) & (spe_0 > spe_1)) | ((pri_0 == pri_1) & (spe_0 == spe_1) & tie_breaker)
     )
 
     first_p = jnp.where(p1_first, 0, 1)
@@ -398,9 +356,7 @@ def step(
     first_roll = jnp.where(p1_first, rng_roll1, rng_roll2)
     second_roll = jnp.where(p1_first, rng_roll2, rng_roll1)
 
-    def execute_actor(
-        s: BattleState, act: jnp.ndarray, p_idx: int, roll: jnp.ndarray
-    ) -> BattleState:
+    def execute_actor(s: BattleState, act: jnp.ndarray, p_idx: int, roll: jnp.ndarray) -> BattleState:
         is_switch = act >= 4
         bench_slot = act - 3
         move_slot = jnp.clip(act, 0, 3)
@@ -453,9 +409,7 @@ def step(
     turn_limit_reached = s8.turn_count >= 100
 
     done = (~p1_has_alive) | (~p2_has_alive) | turn_limit_reached
-    winner = jnp.where(
-        p1_has_alive & ~p2_has_alive, 1, jnp.where(p2_has_alive & ~p1_has_alive, 2, 0)
-    )
+    winner = jnp.where(p1_has_alive & ~p2_has_alive, 1, jnp.where(p2_has_alive & ~p1_has_alive, 2, 0))
 
     p1_team_hp = jnp.mean(s8.team_hp[0])
     p2_team_hp = jnp.mean(s8.team_hp[1])

@@ -71,14 +71,10 @@ def extract_species_and_moves(
 
     # Species mapping
     species_list = sorted(list(pokedex.keys()))
-    species_to_idx = {
-        sp: i + 1 for i, sp in enumerate(species_list)
-    }  # 0 is reserved for None/Empty
+    species_to_idx = {sp: i + 1 for i, sp in enumerate(species_list)}  # 0 is reserved for None/Empty
     # Move mapping
     move_list = sorted(list(moves.keys()))
-    move_to_idx = {
-        mv: i + 1 for i, mv in enumerate(move_list)
-    }  # 0 is reserved for None/Empty
+    move_to_idx = {mv: i + 1 for i, mv in enumerate(move_list)}  # 0 is reserved for None/Empty
 
     # Build species table: (N_species + 1, 8)
     species_table = np.zeros((len(species_list) + 1, 8), dtype=np.int32)
@@ -125,9 +121,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     type_chart = build_type_chart(gen_data)
-    species_to_idx, move_to_idx, species_table, move_table = extract_species_and_moves(
-        gen_data
-    )
+    species_to_idx, move_to_idx, species_table, move_table = extract_species_and_moves(gen_data)
 
     out_npz = out_dir / "mechanics_tables.npz"
     np.savez_compressed(
