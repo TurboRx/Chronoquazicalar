@@ -16,6 +16,8 @@ checkpoints/
 *.npz
 *.bin
 *.tar.gz
+!engine/data/*.npz
+!training/engine/data/*.npz
 
 # Reference & dependencies
 reference/pokemon-showdown/
