@@ -24,8 +24,10 @@ jobs:
           pip install --upgrade pip
           pip install ruff jax jaxlib flax optax numpy scipy poke-env
 
-      - name: Run Ruff Linter
-        run: ruff check engine/ models/ search/ scripts/ bot_client.py
+      - name: Run Ruff Linter & Formatter Check
+        run: |
+          ruff check .
+          ruff format --check .
 
       - name: Run Unit Tests
         run: |
