@@ -423,7 +423,7 @@ def train_ppo_selfplay(
             sync_to_huggingface(latest_ckpt_file, metrics)
 
         if current_time - session_start_time >= MAX_SESSION_DURATION_SEC:
-            print("[!] Approaching Kaggle 12h limit. Initiating autonomous handoff...")
+            print("[!] Reached safe session duration limit. Saving final checkpoint...")
             with open(latest_ckpt_file, "wb") as f:
                 pickle.dump(params, f)
             metrics = {
@@ -434,11 +434,12 @@ def train_ppo_selfplay(
                 "entropy": float(ent),
                 "fps": float(fps),
                 "timestamp": current_time,
-                "handoff": True,
+                "final_session": True,
             }
             sync_to_huggingface(latest_ckpt_file, metrics)
-            trigger_next_kaggle_kernel()
-            print("[✓] Autonomous handoff completed. Exiting session cleanly.")
+            if os.environ.get("AUTO_HANDOFF") == "1":
+                trigger_next_kaggle_kernel()
+            print("[✓] Session completed and cleanly saved. Exiting session.")
             sys.exit(0)
 
     return params
