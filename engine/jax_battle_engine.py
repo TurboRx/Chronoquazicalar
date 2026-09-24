@@ -30,6 +30,16 @@ TYPE_CHART = jnp.array(_tables["type_chart"], dtype=jnp.float32)  # (18, 18)
 SPECIES_TABLE = jnp.array(_tables["species_table"], dtype=jnp.int32)  # (N_species, 8)
 MOVE_TABLE = jnp.array(_tables["move_table"], dtype=jnp.int32)  # (N_moves, 6)
 
+PROFILES_PATH = Path(__file__).resolve().parent / "data" / "randbats_profiles.npz"
+if PROFILES_PATH.exists():
+    _profiles = np.load(PROFILES_PATH)
+    RANDBATS_SPECIES = jnp.array(_profiles["species"], dtype=jnp.int32)
+    RANDBATS_MOVES = jnp.array(_profiles["moves"], dtype=jnp.int32)
+else:
+    RANDBATS_SPECIES = jnp.array([950, 230, 150, 1380, 450, 1200], dtype=jnp.int32)
+    RANDBATS_MOVES = jnp.array([[100, 200, 300, 400]] * 6, dtype=jnp.int32)
+NUM_PROFILES = int(RANDBATS_SPECIES.shape[0])
+
 ROCK_TYPE_IDX = 12
 FLYING_TYPE_IDX = 9
 
@@ -483,3 +493,30 @@ def batched_rollout(
         _scan_step, (initial_states, actions_p1, actions_p2), None, length=num_steps
     )
     return final_states, rewards, dones
+
+
+def sample_battle_teams(rng_key: jax.Array) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Sample diverse 6-mon teams (species and moves) for P1 and P2 from Randbats sets."""
+    k1, k2 = jax.random.split(rng_key)
+    p1_idx = jax.random.choice(k1, NUM_PROFILES, shape=(6,), replace=False)
+    p2_idx = jax.random.choice(k2, NUM_PROFILES, shape=(6,), replace=False)
+    return RANDBATS_SPECIES[p1_idx], RANDBATS_SPECIES[p2_idx], RANDBATS_MOVES[p1_idx], RANDBATS_MOVES[p2_idx]
+
+
+def step_with_autoreset(
+    state: BattleState, action_p1: jnp.ndarray, action_p2: jnp.ndarray
+) -> Tuple[BattleState, jnp.ndarray, jnp.ndarray]:
+    """
+    Executes a step in the battle. If the battle reaches a terminal state (done=True),
+    returns the terminal reward and automatically resets the state to a fresh battle
+    with newly sampled competitive teams.
+    """
+    next_s, r, d = step(state, action_p1, action_p2)
+    k1, k2 = jax.random.split(next_s.rng_key)
+    p1_sp, p2_sp, p1_mv, p2_mv = sample_battle_teams(k1)
+    reset_s = init_battle(k2, p1_sp, p2_sp, p1_mv, p2_mv)
+    final_s = jax.tree_util.tree_map(lambda n, rst: jnp.where(d, rst, n), next_s, reset_s)
+    return final_s, r, d
+
+
+batch_step_autoreset = jax.jit(jax.vmap(step_with_autoreset, in_axes=(0, 0, 0)))

@@ -60,9 +60,10 @@ import jax.numpy as jnp
 import optax
 
 from engine.jax_battle_engine import (
-    batch_step,
+    batch_step_autoreset,
     get_valid_actions_mask,
     init_battle,
+    sample_battle_teams,
 )
 from models.transformer_policy import (
     ChronosTransformer,
@@ -89,7 +90,8 @@ if not HF_TOKEN:
     except Exception:
         pass
 KAGGLE_API_TOKEN = os.environ.get("KAGGLE_API_TOKEN")
-MAX_SESSION_DURATION_SEC = 11 * 3600 + 15 * 60  # 11 hours 15 minutes
+# Safe duration for 2h remaining TPU quota (1 hour 45 minutes)
+MAX_SESSION_DURATION_SEC = int(1.75 * 3600)
 
 
 def prepare_kaggle_kernel_metadata(kernel_dir: Path, kernel_slug: str = "turborx/project-chronos-ppo-self-play-training") -> None:
@@ -282,18 +284,14 @@ def train_ppo_selfplay(
     rng = jax.random.PRNGKey(seed)
     model = ChronosTransformer()
 
-    rng, k1, k2, k3, k4 = jax.random.split(rng, 5)
-    sample_species = jnp.array([950, 230, 150, 1380, 450, 1200], dtype=jnp.int32)
-    sample_moves = jnp.array([[100, 200, 300, 400]] * 6, dtype=jnp.int32)
-
-    p1_teams = jnp.tile(sample_species, (num_envs, 1))
-    p2_teams = jnp.tile(sample_species, (num_envs, 1))
-    p1_mvs = jnp.tile(sample_moves, (num_envs, 1, 1))
-    p2_mvs = jnp.tile(sample_moves, (num_envs, 1, 1))
-
     subkeys = jax.random.split(rng, num_envs)
-    init_vmap = jax.vmap(init_battle, in_axes=(0, 0, 0, 0, 0))
-    states = init_vmap(subkeys, p1_teams, p2_teams, p1_mvs, p2_mvs)
+
+    def init_single_env(key):
+        k1, k2 = jax.random.split(key)
+        p1_sp, p2_sp, p1_mv, p2_mv = sample_battle_teams(k1)
+        return init_battle(k2, p1_sp, p2_sp, p1_mv, p2_mv)
+
+    states = jax.vmap(init_single_env)(subkeys)
 
     sample_state = jax.tree_util.tree_map(lambda x: x[:1], states)
     sample_inp = batch_state_to_model_inputs(sample_state, 0)
@@ -359,7 +357,7 @@ def train_ppo_selfplay(
             logits_p2, _, _ = model.apply(params, inp_p2, valid_mask=masks_p2)
             actions_p2 = jax.random.categorical(akey2, logits_p2)
 
-            next_states, rewards, dones = batch_step(cur_states, actions_p1, actions_p2)
+            next_states, rewards, dones = batch_step_autoreset(cur_states, actions_p1, actions_p2)
 
             log_p = jax.nn.log_softmax(logits_p1, axis=-1)
             act_log_p = jnp.take_along_axis(log_p, actions_p1[:, None], axis=-1).squeeze(-1)

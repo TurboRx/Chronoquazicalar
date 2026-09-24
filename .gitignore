@@ -7,6 +7,7 @@
 .gitconfig
 .kaggle/
 logs/
+kaggle_logs/
 
 # Model checkpoints & large binary artifacts (>100MB limit safety)
 checkpoints/
