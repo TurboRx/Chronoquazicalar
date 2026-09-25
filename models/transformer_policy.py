@@ -2,7 +2,7 @@
 Non-causal Transformer policy and value network in Flax.
 """
 
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Union
 
 import flax.linen as nn
 import jax
@@ -115,6 +115,16 @@ class ChronosTransformer(nn.Module):
             ]
         )
 
+        self.opp_action_head = nn.Sequential(
+            [
+                nn.Dense(self.d_ff),
+                nn.gelu,
+                nn.Dense(self.d_ff),
+                nn.gelu,
+                nn.Dense(self.num_actions),
+            ]
+        )
+
     def tokenize_battlefield(self, inputs: Dict[str, jnp.ndarray]) -> jnp.ndarray:
         B = inputs["act_species"].shape[0]
 
@@ -159,7 +169,8 @@ class ChronosTransformer(nn.Module):
         inputs: Dict[str, jnp.ndarray],
         valid_mask: Optional[jnp.ndarray] = None,
         deterministic: bool = True,
-    ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+        return_opp_action: bool = False,
+    ) -> Union[Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray], Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]]:
         x = self.tokenize_battlefield(inputs)
 
         for block in self.encoder_blocks:
@@ -178,6 +189,13 @@ class ChronosTransformer(nn.Module):
         action_probs = jax.nn.softmax(masked_logits, axis=-1)
         value = jnp.tanh(self.value_head(cls_rep))
 
+        if return_opp_action or self.is_initializing():
+            opp_action_logits = self.opp_action_head(cls_rep)
+        else:
+            opp_action_logits = None
+
+        if return_opp_action:
+            return masked_logits, action_probs, value, opp_action_logits
         return masked_logits, action_probs, value
 
 

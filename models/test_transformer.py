@@ -64,6 +64,25 @@ class TestTransformerPolicy(unittest.TestCase):
         self.assertGreaterEqual(float(value[0, 0]), -1.0)
         self.assertLessEqual(float(value[0, 0]), 1.0)
 
+    def test_opponent_action_auxiliary_head(self):
+        inputs = state_to_model_inputs(self.state, perspective_player=0)
+        batched_inputs = {k: v[None, ...] for k, v in inputs.items()}
+        params = self.model.init(self.rng, batched_inputs)
+
+        # 1. Forward pass with return_opp_action=True
+        logits, probs, value, opp_logits = self.model.apply(params, batched_inputs, return_opp_action=True)
+        self.assertEqual(opp_logits.shape, (1, 9))
+        self.assertEqual(logits.shape, (1, 9))
+        self.assertEqual(probs.shape, (1, 9))
+        self.assertEqual(value.shape, (1, 1))
+
+        # 2. Backward compatibility with legacy parameters missing opp_action_head
+        legacy_params = {"params": {k: v for k, v in params["params"].items() if k != "opp_action_head"}}
+        leg_logits, leg_probs, leg_value = self.model.apply(legacy_params, batched_inputs, return_opp_action=False)
+        self.assertEqual(leg_logits.shape, (1, 9))
+        self.assertEqual(leg_probs.shape, (1, 9))
+        self.assertEqual(leg_value.shape, (1, 1))
+
     def test_damage_calc_and_heuristic(self):
         min_damages = get_min_roll_damages(self.state, player_idx=0)
         self.assertEqual(min_damages.shape, (4,))
