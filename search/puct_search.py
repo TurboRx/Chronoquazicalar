@@ -81,6 +81,7 @@ class PUCTSearchEngine:
         time_limit_sec: Optional[float] = None,
         max_simulations: int = 150,
         temperature: float = 0.5,
+        revealed_opp_count: Optional[int] = None,
     ) -> Tuple[int, np.ndarray, Dict]:
         start_time = time.perf_counter()
         time_limit = time_limit_sec or self.default_time_limit_sec
@@ -94,7 +95,28 @@ class PUCTSearchEngine:
                 "searched_simulations": 0,
                 "elapsed_sec": time.perf_counter() - start_time,
                 "heuristic_triggered": True,
+                "early_game_bypass": False,
                 "expected_value": 1.0,
+                "root_visits": 0,
+            }
+            return act, strat, stats
+
+        # Early-game search bypass (<= 2 revealed opponent Pokémon)
+        # Avoids noisy, high-uncertainty MCTS simulations on hidden sets; returns policy prior directly
+        if revealed_opp_count is not None and revealed_opp_count <= 2:
+            probs_p1, _, val = self.evaluate_state(root_state)
+            masks = np.array(get_valid_actions_mask(root_state))[0]
+            masked_probs = np.where(masks, probs_p1, 0.0)
+            sum_p = np.sum(masked_probs)
+            strat = (masked_probs / sum_p) if sum_p > 1e-12 else probs_p1
+            act = int(np.argmax(strat))
+            stats = {
+                "searched_simulations": 0,
+                "elapsed_sec": time.perf_counter() - start_time,
+                "heuristic_triggered": False,
+                "early_game_bypass": True,
+                "expected_value": float(val),
+                "root_visits": 0,
             }
             return act, strat, stats
 
@@ -135,6 +157,7 @@ class PUCTSearchEngine:
             "searched_simulations": sim_count,
             "elapsed_sec": total_elapsed,
             "heuristic_triggered": False,
+            "early_game_bypass": False,
             "expected_value": float(root.value),
             "root_visits": root.total_visits,
         }
@@ -147,6 +170,10 @@ class PUCTSearchEngine:
 
         a1, a2 = self._select_action_pair(node)
         pair = (a1, a2)
+
+        # Information horizon truncation: truncate search if simulated actions fall outside plausible prior horizon (< 2% prior probability)
+        if depth > 0 and (node.prior_p2[a2] < 0.02 or node.prior_p1[a1] < 0.02):
+            return node.value
 
         if pair not in node.children:
             act_p1 = jnp.array(a1, dtype=jnp.int32)

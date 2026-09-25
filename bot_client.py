@@ -264,6 +264,7 @@ class ChronosPlayer(Player):
         opp_sp = act_p2.species if act_p2 else "charizard"
         p2_revealed = [m.id for m in act_p2.moves.values()] if act_p2 and act_p2.moves else []
         scenarios = self.kb.get_candidate_move_scenarios(opp_sp, p2_revealed, max_scenarios=2)
+        revealed_opp_count = len([pkm for pkm in battle.opponent_team.values() if pkm.species])
 
         if len(scenarios) <= 1:
             chosen_act, strategy, _ = self.searcher.search(
@@ -271,6 +272,7 @@ class ChronosPlayer(Player):
                 time_limit_sec=2.0,
                 max_simulations=100,
                 temperature=0.3,
+                revealed_opp_count=revealed_opp_count,
             )
         else:
             aggregated_strategy = np.zeros(9, dtype=np.float32)
@@ -284,6 +286,7 @@ class ChronosPlayer(Player):
                     time_limit_sec=time_per_scenario,
                     max_simulations=sims_per_scenario,
                     temperature=0.3,
+                    revealed_opp_count=revealed_opp_count,
                 )
                 aggregated_strategy += weight * scen_strat
 
@@ -344,7 +347,7 @@ class ChronosPlayer(Player):
                 if m in battle.available_moves and strategy[idx] > best_p:
                     best_p = strategy[idx]
                     best_move = m
-            should_tera = self._should_terastallize(battle, best_move)
+            should_tera = self._should_terastallize(battle, best_move, state)
             return self.create_order(best_move, terastallize=should_tera)
         elif battle.available_switches:
             return self.create_order(battle.available_switches[0])

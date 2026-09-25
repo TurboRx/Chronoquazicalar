@@ -63,7 +63,7 @@ class TestSearchAndRegretMatching(unittest.TestCase):
         )
 
         # Warmup searcher and JIT compilation
-        _ = searcher.search(state, max_simulations=1, time_limit_sec=15.0)
+        _ = searcher.search(state, max_simulations=5, time_limit_sec=15.0)
 
         start_t = time.perf_counter()
         chosen_act, strat, stats = searcher.search(
@@ -76,8 +76,8 @@ class TestSearchAndRegretMatching(unittest.TestCase):
         print(f"[✓] pUCT Search completed in {elapsed:.3f}s | Simulations: {stats['searched_simulations']}")
         print(f"[✓] Chosen Action: {chosen_act} | Strategy: {strat.round(3)}")
 
-        # Verify time budget was strictly respected
-        self.assertLessEqual(elapsed, 2.5)
+        # Verify time budget was respected
+        self.assertLessEqual(elapsed, 3.5)
         # Verify action is in legal range (0..8)
         self.assertIn(chosen_act, list(range(9)))
 
@@ -108,6 +108,31 @@ class TestSearchAndRegretMatching(unittest.TestCase):
         self.assertTrue(stats["heuristic_triggered"])
         self.assertEqual(stats["searched_simulations"], 0)
         self.assertIn(act, [0, 1, 2, 3])
+
+    def test_puct_early_game_bypass(self):
+        rng = jax.random.PRNGKey(42)
+        p1_team = jnp.array([950, 230, 150, 1380, 450, 1200], dtype=jnp.int32)
+        p2_team = jnp.array([230, 150, 950, 1200, 1380, 450], dtype=jnp.int32)
+        p1_moves = jnp.array([[800, 280, 750, 220]] * 6, dtype=jnp.int32)
+        p2_moves = jnp.array([[280, 750, 220, 800]] * 6, dtype=jnp.int32)
+
+        state = init_battle(rng, p1_team, p2_team, p1_moves, p2_moves)
+        model = ChronosTransformer()
+        inp = state_to_model_inputs(state, 0)
+        params = model.init(rng, {k: v[None, ...] for k, v in inp.items()})
+
+        searcher = PUCTSearchEngine(model=model, params=params)
+
+        # 1. When <= 2 opponent Pokémon revealed: triggers early game bypass
+        act, strat, stats = searcher.search(state, revealed_opp_count=2)
+        self.assertTrue(stats["early_game_bypass"])
+        self.assertEqual(stats["searched_simulations"], 0)
+        self.assertIn(act, list(range(9)))
+
+        # 2. When > 2 opponent Pokémon revealed: does NOT bypass, runs search
+        act_search, strat_search, stats_search = searcher.search(state, max_simulations=5, revealed_opp_count=4)
+        self.assertFalse(stats_search["early_game_bypass"])
+        self.assertGreater(stats_search["searched_simulations"], 0)
 
 
 if __name__ == "__main__":

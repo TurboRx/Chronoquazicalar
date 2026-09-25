@@ -90,6 +90,10 @@ def get_mixed_action(
         best_local_idx = int(np.argmax(norm_p))
         chosen_action = int(valid_actions[best_local_idx])
     else:
-        chosen_action = int(np.random.choice(valid_actions, p=norm_p))
+        scaled_logits = np.log(np.maximum(norm_p, 1e-12)) / max(temperature, 1e-4)
+        scaled_logits -= np.max(scaled_logits)
+        exp_p = np.exp(scaled_logits)
+        sampling_p = exp_p / np.sum(exp_p)
+        chosen_action = int(np.random.choice(valid_actions, p=sampling_p))
 
     return chosen_action, full_strategy
