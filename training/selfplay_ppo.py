@@ -56,7 +56,19 @@ import time
 from pathlib import Path
 from typing import Dict, NamedTuple, Optional, Tuple
 
+# Configure JAX memory allocation to avoid pre-allocating entire GPU VRAM
+os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+os.environ.setdefault("XLA_PYTHON_CLIENT_MEM_FRACTION", "0.80")
+
 import jax
+
+# Compatibility bridge for JAX >=0.11 with Flax tracers
+if hasattr(jax, "extend") and hasattr(jax.extend, "core") and hasattr(jax.extend.core, "get_opaque_trace_state"):
+    import jax.core
+
+    if not hasattr(jax.core, "get_opaque_trace_state"):
+        jax.core.get_opaque_trace_state = jax.extend.core.get_opaque_trace_state
+
 import jax.numpy as jnp
 import optax
 
@@ -99,7 +111,7 @@ if not HF_TOKEN:
     except Exception:
         pass
 KAGGLE_API_TOKEN = os.environ.get("KAGGLE_API_TOKEN")
-MAX_SESSION_DURATION_SEC = int(1.75 * 3600)
+MAX_SESSION_DURATION_SEC = int(os.environ.get("MAX_SESSION_DURATION_SEC", int(11.5 * 3600)))
 
 
 def prepare_kaggle_kernel_metadata(
@@ -508,8 +520,8 @@ def main():
     base_dir = Path(__file__).resolve().parent.parent
     prepare_kaggle_kernel_metadata(base_dir)
     train_ppo_selfplay(
-        num_envs=512,
-        rollout_len=16,
+        num_envs=int(os.environ.get("NUM_ENVS", 128)),
+        rollout_len=int(os.environ.get("ROLLOUT_LEN", 16)),
         total_updates=100000,
         checkpoint_interval_sec=1800.0,
     )

@@ -23,6 +23,8 @@ checkpoints/
 reference/pokemon-showdown/
 reference/poke-env/
 smogon-showdown/
+google-colab-cli/
+colab-mcp/
 node_modules/
 dist/
 
