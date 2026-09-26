@@ -12,7 +12,6 @@ from typing import List, Optional
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 from poke_env.battle.battle import Battle
 from poke_env.player import Player, SimpleHeuristicsPlayer
 from poke_env.player.battle_order import BattleOrder
@@ -30,6 +29,7 @@ from engine.battle_state import (
     WEATHER_SUN,
     BattleState,
 )
+from engine.belief_sampler import BeliefWorldSampler
 from engine.damage_calc import check_guaranteed_ko
 from engine.jax_battle_engine import init_battle
 from engine.randbats_knowledge import RandbatsKnowledgeBase
@@ -66,6 +66,7 @@ class ChronosPlayer(Player):
             self.type_to_idx = {}
 
         self.kb = RandbatsKnowledgeBase(mappings_path=mappings_path)
+        self.sampler = BeliefWorldSampler(kb=self.kb, mappings_path=mappings_path)
         self.model = ChronosTransformer()
         rng = jax.random.PRNGKey(42)
 
@@ -245,7 +246,6 @@ class ChronosPlayer(Player):
     def choose_move(self, battle: Battle) -> BattleOrder:
         state = self._battle_to_battle_state(battle)
         act_p1 = battle.active_pokemon
-        act_p2 = battle.opponent_active_pokemon
         all_moves = list(act_p1.moves.values()) if act_p1 and act_p1.moves else []
         bench_pkms = [pkm for pkm in battle.team.values() if pkm != act_p1]
 
@@ -260,38 +260,27 @@ class ChronosPlayer(Player):
                         should_tera = self._should_terastallize(battle, target_move, state)
                         return self.create_order(target_move, terastallize=should_tera)
 
-        # 2. Search policy resolution with scenario determinization
-        opp_sp = act_p2.species if act_p2 else "charizard"
-        p2_revealed = [m.id for m in act_p2.moves.values()] if act_p2 and act_p2.moves else []
-        scenarios = self.kb.get_candidate_move_scenarios(opp_sp, p2_revealed, max_scenarios=2)
+        # 2. Monte Carlo Belief-State Sampling across imperfect-information worlds
         revealed_opp_count = len([pkm for pkm in battle.opponent_team.values() if pkm.species])
 
-        if len(scenarios) <= 1:
-            chosen_act, strategy, _ = self.searcher.search(
-                state,
-                time_limit_sec=2.0,
-                max_simulations=100,
-                temperature=0.3,
-                revealed_opp_count=revealed_opp_count,
-            )
+        # Dynamic world count & budget: Fast on early game, deep on mid/endgames
+        if revealed_opp_count <= 2:
+            num_worlds = 16
+            time_budget = 0.8
+            sims_per_world = 15
         else:
-            aggregated_strategy = np.zeros(9, dtype=np.float32)
-            time_per_scenario = min(1.0, 2.0 / len(scenarios))
-            sims_per_scenario = max(40, 100 // len(scenarios))
+            num_worlds = 32
+            time_budget = 2.0
+            sims_per_world = 25
 
-            for _, scen_ids, weight in scenarios:
-                scen_state = self._battle_to_battle_state(battle, override_opp_active_moves=scen_ids)
-                _, scen_strat, _ = self.searcher.search(
-                    scen_state,
-                    time_limit_sec=time_per_scenario,
-                    max_simulations=sims_per_scenario,
-                    temperature=0.3,
-                    revealed_opp_count=revealed_opp_count,
-                )
-                aggregated_strategy += weight * scen_strat
-
-            strategy = aggregated_strategy / np.sum(aggregated_strategy)
-            chosen_act = int(np.argmax(strategy))
+        sampled_worlds = self.sampler.sample_worlds(battle, num_worlds=num_worlds)
+        chosen_act, strategy, _ = self.searcher.search_belief_worlds(
+            world_states=sampled_worlds,
+            time_limit_sec=time_budget,
+            sims_per_world=sims_per_world,
+            temperature=0.3,
+            revealed_opp_count=revealed_opp_count,
+        )
 
         # 3. Forced switch scenario (active Pokémon fainted)
         if not battle.available_moves and battle.available_switches:

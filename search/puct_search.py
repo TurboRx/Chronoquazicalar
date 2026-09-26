@@ -3,8 +3,9 @@ Simultaneous-move pUCT lookahead search with CFR regret matching.
 """
 
 import time
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -61,19 +62,20 @@ class PUCTSearchEngine:
         self.max_depth = max_depth
         self.default_time_limit_sec = default_time_limit_sec
 
+        @jax.jit
+        def _jitted_eval(params, batched, masks):
+            return self.model.apply(params, batched, valid_mask=masks)
+
+        self._jitted_eval = _jitted_eval
+        self._jitted_step = jax.jit(step)
+
     def evaluate_state(self, state: BattleState) -> Tuple[np.ndarray, np.ndarray, float]:
         inp_p1 = state_to_model_inputs(state, perspective_player=0)
-        batched_p1 = {k: v[None, ...] for k, v in inp_p1.items()}
-        mask = np.array(get_valid_actions_mask(state))
-        mask_p1 = jnp.array(mask[0:1])
-        _, probs_p1, val_p1 = self.model.apply(self.params, batched_p1, valid_mask=mask_p1)
-
         inp_p2 = state_to_model_inputs(state, perspective_player=1)
-        batched_p2 = {k: v[None, ...] for k, v in inp_p2.items()}
-        mask_p2 = jnp.array(mask[1:2])
-        _, probs_p2, _ = self.model.apply(self.params, batched_p2, valid_mask=mask_p2)
-
-        return np.array(probs_p1[0]), np.array(probs_p2[0]), float(val_p1[0, 0])
+        batched = {k: jnp.stack([inp_p1[k], inp_p2[k]]) for k in inp_p1}
+        masks = jnp.array(get_valid_actions_mask(state))
+        _, probs, vals = self._jitted_eval(self.params, batched, masks)
+        return np.array(probs[0]), np.array(probs[1]), float(vals[0, 0])
 
     def search(
         self,
@@ -164,6 +166,93 @@ class PUCTSearchEngine:
 
         return chosen_action, nash_strat, stats
 
+    def search_belief_worlds(
+        self,
+        world_states: List[BattleState],
+        time_limit_sec: Optional[float] = None,
+        sims_per_world: int = 20,
+        temperature: float = 0.3,
+        revealed_opp_count: Optional[int] = None,
+    ) -> Tuple[int, np.ndarray, Dict]:
+        """
+        Runs simultaneous pUCT search across sampled imperfect-information belief worlds.
+        Averages Monte Carlo tree strategies and action-values across worlds.
+        """
+        start_time = time.perf_counter()
+        time_limit = time_limit_sec or self.default_time_limit_sec
+
+        if not world_states:
+            raise ValueError("world_states list cannot be empty")
+
+        # 1. Guaranteed lethal KO heuristic check on root state
+        has_ko, ko_action = check_guaranteed_ko(world_states[0], player_idx=0)
+        if bool(has_ko) and int(ko_action) >= 0:
+            act = int(ko_action)
+            strat = np.zeros(9, dtype=np.float32)
+            strat[act] = 1.0
+            stats = {
+                "searched_simulations": 0,
+                "elapsed_sec": time.perf_counter() - start_time,
+                "heuristic_triggered": True,
+                "early_game_bypass": False,
+                "num_worlds_searched": 0,
+                "expected_value": 1.0,
+                "root_visits": 0,
+            }
+            return act, strat, stats
+
+        # 2. Iterate across sampled belief worlds
+        num_worlds = len(world_states)
+        time_per_world = max(0.05, time_limit / max(1, num_worlds))
+
+        aggregated_strategy = np.zeros(9, dtype=np.float32)
+        total_sims = 0
+        worlds_searched = 0
+        total_visits = 0
+        values = []
+
+        for w_idx, world_state in enumerate(world_states):
+            elapsed = time.perf_counter() - start_time
+            if elapsed >= time_limit and worlds_searched > 0:
+                break
+
+            remaining_time = max(0.05, time_limit - elapsed)
+            budget = min(time_per_world, remaining_time)
+
+            _, w_strat, w_stats = self.search(
+                world_state,
+                time_limit_sec=budget,
+                max_simulations=sims_per_world,
+                temperature=temperature,
+                revealed_opp_count=revealed_opp_count,
+            )
+
+            aggregated_strategy += w_strat
+            total_sims += w_stats.get("searched_simulations", 0)
+            total_visits += w_stats.get("root_visits", 0)
+            values.append(w_stats.get("expected_value", 0.0))
+            worlds_searched += 1
+
+        sum_strat = np.sum(aggregated_strategy)
+        if sum_strat > 1e-12:
+            final_strategy = aggregated_strategy / sum_strat
+        else:
+            final_strategy = np.ones(9, dtype=np.float32) / 9.0
+
+        chosen_act = int(np.argmax(final_strategy))
+        total_elapsed = time.perf_counter() - start_time
+
+        stats = {
+            "searched_simulations": total_sims,
+            "elapsed_sec": total_elapsed,
+            "heuristic_triggered": False,
+            "early_game_bypass": False,
+            "num_worlds_searched": worlds_searched,
+            "expected_value": float(np.mean(values)) if values else 0.0,
+            "root_visits": total_visits,
+        }
+        return chosen_act, final_strategy, stats
+
     def _simulate(self, node: PUCTNode, depth: int) -> float:
         if node.is_terminal or depth >= self.max_depth:
             return node.value
@@ -178,7 +267,7 @@ class PUCTSearchEngine:
         if pair not in node.children:
             act_p1 = jnp.array(a1, dtype=jnp.int32)
             act_p2 = jnp.array(a2, dtype=jnp.int32)
-            next_state, reward, done = step(node.state, act_p1, act_p2)
+            next_state, reward, done = self._jitted_step(node.state, act_p1, act_p2)
 
             is_term = bool(done)
             if is_term:
