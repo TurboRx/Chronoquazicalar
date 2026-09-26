@@ -310,6 +310,9 @@ def train_ppo_selfplay(
     checkpoint_interval_sec: float = 1800.0,
     checkpoint_dir: Optional[Path] = None,
     seed: int = 42,
+    league_opponent_fraction: float = 0.15,
+    checkpoint_pool_size: int = 10,
+    pool_snapshot_interval: int = 20,
 ) -> Dict:
     if checkpoint_dir is None:
         checkpoint_dir = Path("/kaggle/working") if os.path.exists("/kaggle/working") else Path("./checkpoints")
@@ -340,6 +343,11 @@ def train_ppo_selfplay(
     )
     opt_state = optimizer.init(params)
 
+    # Initialize historical checkpoint pool for League / Fictitious Play
+    num_league_envs = int(num_envs * league_opponent_fraction)
+    num_selfplay_envs = num_envs - num_league_envs
+    past_checkpoints_pool = [jax.tree_util.tree_map(lambda x: jnp.copy(x), params)]
+
     def ppo_loss(
         p,
         batch_inp,
@@ -349,10 +357,11 @@ def train_ppo_selfplay(
         returns,
         valid_masks,
         batch_opp_acts,
+        valid_opp_masks,
         aux_opp_coef=0.25,
         za_coef=0.005,
     ):
-        logits, probs, values, opp_logits = model.apply(
+        logits, probs, values, raw_opp_logits = model.apply(
             p, batch_inp, valid_mask=valid_masks, deterministic=False, return_opp_action=True
         )
         log_probs = jax.nn.log_softmax(logits, axis=-1)
@@ -366,13 +375,13 @@ def train_ppo_selfplay(
         val_loss = 0.5 * jnp.mean((values.squeeze(-1) - returns) ** 2)
         entropy = -jnp.mean(jnp.sum(probs * jnp.log(jnp.maximum(probs, 1e-8)), axis=-1))
 
-        # 1. Opponent action auxiliary prediction loss (dense turn-by-turn gradient signal)
-        opp_log_probs = jax.nn.log_softmax(opp_logits, axis=-1)
+        # 1. Opponent action auxiliary prediction loss conditioned on valid opponent moves
+        masked_opp_logits = jnp.where(valid_opp_masks, raw_opp_logits, -1e9)
+        opp_log_probs = jax.nn.log_softmax(masked_opp_logits, axis=-1)
         opp_act_log_probs = jnp.take_along_axis(opp_log_probs, batch_opp_acts[:, None], axis=-1).squeeze(-1)
         opp_loss = -jnp.mean(opp_act_log_probs)
 
         # 2. Zero-avoiding regularization: -za_coef * mean(log(pi(s, a))) on valid actions
-        # Prevents situational moves (Encore, Trick, Roar, recovery) from dropping to 0% probability
         valid_mask_float = valid_masks.astype(jnp.float32)
         num_valid = jnp.maximum(jnp.sum(valid_mask_float, axis=-1), 1.0)
         za_penalty = -jnp.mean(jnp.sum(valid_mask_float * jnp.log(jnp.maximum(probs, 1e-7)), axis=-1) / num_valid)
@@ -384,9 +393,9 @@ def train_ppo_selfplay(
         return total_loss, (policy_loss, val_loss, entropy, opp_loss, za_penalty)
 
     @jax.jit
-    def update_step(p, opt_s, batch_inp, batch_acts, old_log_p, advs, rets, v_masks, batch_opp_acts):
+    def update_step(p, opt_s, batch_inp, batch_acts, old_log_p, advs, rets, v_masks, batch_opp_acts, v_opp_masks):
         grads, (pol_l, val_l, ent, opp_l, za_pen) = jax.grad(ppo_loss, has_aux=True)(
-            p, batch_inp, batch_acts, old_log_p, advs, rets, v_masks, batch_opp_acts
+            p, batch_inp, batch_acts, old_log_p, advs, rets, v_masks, batch_opp_acts, v_opp_masks
         )
         updates, opt_s = optimizer.update(grads, opt_s, p)
         p = optax.apply_updates(p, updates)
@@ -405,6 +414,7 @@ def train_ppo_selfplay(
         buf_values = []
         buf_dones = []
         buf_masks = []
+        buf_opp_masks = []
 
         cur_states = states
         for step_idx in range(rollout_len):
@@ -417,7 +427,24 @@ def train_ppo_selfplay(
 
             inp_p2 = batch_state_to_model_inputs(cur_states, 1)
             masks_p2 = jax.vmap(get_valid_actions_mask)(cur_states)[:, 1]
-            logits_p2, _, _ = model.apply(params, inp_p2, valid_mask=masks_p2)
+
+            # Fictitious Play: Sample a fraction of opponents from the historical checkpoint pool
+            if num_league_envs > 0 and len(past_checkpoints_pool) > 1:
+                inp_p2_self = jax.tree_util.tree_map(lambda x: x[:num_selfplay_envs], inp_p2)
+                masks_p2_self = masks_p2[:num_selfplay_envs]
+                logits_p2_self, _, _ = model.apply(params, inp_p2_self, valid_mask=masks_p2_self)
+
+                inp_p2_league = jax.tree_util.tree_map(lambda x: x[num_selfplay_envs:], inp_p2)
+                masks_p2_league = masks_p2[num_selfplay_envs:]
+                rng, pool_key = jax.random.split(rng)
+                pool_idx = int(jax.random.randint(pool_key, (), 0, len(past_checkpoints_pool)))
+                opponent_params = past_checkpoints_pool[pool_idx]
+                logits_p2_league, _, _ = model.apply(opponent_params, inp_p2_league, valid_mask=masks_p2_league)
+
+                logits_p2 = jnp.concatenate([logits_p2_self, logits_p2_league], axis=0)
+            else:
+                logits_p2, _, _ = model.apply(params, inp_p2, valid_mask=masks_p2)
+
             actions_p2 = jax.random.categorical(akey2, logits_p2)
 
             next_states, rewards, dones = batch_step_autoreset(cur_states, actions_p1, actions_p2)
@@ -433,6 +460,7 @@ def train_ppo_selfplay(
             buf_values.append(vals_p1.squeeze(-1))
             buf_dones.append(dones)
             buf_masks.append(masks_p1)
+            buf_opp_masks.append(masks_p2)
 
             cur_states = next_states
 
@@ -453,12 +481,19 @@ def train_ppo_selfplay(
         flat_adv = advantages.reshape(-1)
         flat_ret = returns.reshape(-1)
         flat_masks = jnp.concatenate(buf_masks, axis=0)
+        flat_opp_masks = jnp.concatenate(buf_opp_masks, axis=0)
 
         flat_inp = {k: jnp.concatenate([s[k] for s in buf_states_list], axis=0) for k in buf_states_list[0].keys()}
 
         params, opt_state, pol_l, val_l, ent, opp_l, za_pen = update_step(
-            params, opt_state, flat_inp, flat_acts, flat_log_p, flat_adv, flat_ret, flat_masks, flat_opp_acts
+            params, opt_state, flat_inp, flat_acts, flat_log_p, flat_adv, flat_ret, flat_masks, flat_opp_acts, flat_opp_masks
         )
+
+        # Snapshot current parameters into historical league pool periodically
+        if update % pool_snapshot_interval == 0:
+            past_checkpoints_pool.append(jax.tree_util.tree_map(lambda x: jnp.copy(x), params))
+            if len(past_checkpoints_pool) > checkpoint_pool_size:
+                past_checkpoints_pool.pop(0)
 
         elapsed = time.perf_counter() - start_t
         fps = (num_envs * rollout_len) / elapsed
@@ -524,6 +559,9 @@ def main():
         rollout_len=int(os.environ.get("ROLLOUT_LEN", 16)),
         total_updates=100000,
         checkpoint_interval_sec=1800.0,
+        league_opponent_fraction=float(os.environ.get("LEAGUE_OPPONENT_FRACTION", 0.15)),
+        checkpoint_pool_size=int(os.environ.get("CHECKPOINT_POOL_SIZE", 10)),
+        pool_snapshot_interval=int(os.environ.get("POOL_SNAPSHOT_INTERVAL", 20)),
     )
 
 

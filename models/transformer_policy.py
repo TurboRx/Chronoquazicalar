@@ -170,6 +170,7 @@ class ChronosTransformer(nn.Module):
         valid_mask: Optional[jnp.ndarray] = None,
         deterministic: bool = True,
         return_opp_action: bool = False,
+        opp_valid_mask: Optional[jnp.ndarray] = None,
     ) -> Union[Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray], Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]]:
         x = self.tokenize_battlefield(inputs)
 
@@ -190,7 +191,11 @@ class ChronosTransformer(nn.Module):
         value = jnp.tanh(self.value_head(cls_rep))
 
         if return_opp_action or self.is_initializing():
-            opp_action_logits = self.opp_action_head(cls_rep)
+            raw_opp_logits = self.opp_action_head(cls_rep)
+            if opp_valid_mask is not None:
+                opp_action_logits = jnp.where(opp_valid_mask, raw_opp_logits, -1e9)
+            else:
+                opp_action_logits = raw_opp_logits
         else:
             opp_action_logits = None
 
