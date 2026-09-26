@@ -567,7 +567,7 @@ def main():
         num_envs=int(os.environ.get("NUM_ENVS", 128)),
         rollout_len=int(os.environ.get("ROLLOUT_LEN", 16)),
         total_updates=100000,
-        checkpoint_interval_sec=1800.0,
+        checkpoint_interval_sec=900.0,
         league_opponent_fraction=float(os.environ.get("LEAGUE_OPPONENT_FRACTION", 0.15)),
         checkpoint_pool_size=int(os.environ.get("CHECKPOINT_POOL_SIZE", 10)),
         pool_snapshot_interval=int(os.environ.get("POOL_SNAPSHOT_INTERVAL", 20)),
