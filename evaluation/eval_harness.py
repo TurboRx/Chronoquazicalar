@@ -12,13 +12,12 @@ import asyncio
 import json
 import logging
 import os
-import sys
 import time
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
-from poke_env.player import Player, SimpleHeuristicsPlayer, MaxBasePowerPlayer
-from poke_env.ps_client.account_configuration import AccountConfiguration
+import numpy as np
+from poke_env.player import Player, SimpleHeuristicsPlayer
 from poke_env.ps_client.server_configuration import LocalhostServerConfiguration
 
 from bot_client import ChronosPlayer
@@ -38,21 +37,21 @@ async def evaluate_against_opponent(
     """Runs a series of head-to-head battles and computes performance statistics."""
     logger.info(f"Starting {num_battles} evaluation battles vs {opponent_player.username}...")
     start_time = time.time()
-    
+
     await chronos_player.battle_against(opponent_player, n_battles=num_battles)
     elapsed = time.time() - start_time
-    
+
     wins = chronos_player.n_won_battles
     losses = chronos_player.n_lost_battles
     ties = chronos_player.n_tied_battles
     total = max(wins + losses + ties, 1)
-    
+
     win_rate = (wins / total) * 100.0
-    
+
     # Calculate turn statistics and average HP differential from finished battles
     turns = [b.turn for b in chronos_player.battles.values() if b.finished]
     avg_turns = float(np.mean(turns)) if turns else 0.0
-    
+
     hp_diffs = []
     for b in chronos_player.battles.values():
         if b.finished:
@@ -60,12 +59,12 @@ async def evaluate_against_opponent(
             p2_hp = sum(mon.current_hp_fraction for mon in b.opponent_team.values())
             hp_diffs.append(p1_hp - p2_hp)
     avg_hp_diff = float(np.mean(hp_diffs)) if hp_diffs else 0.0
-    
+
     logger.info(
         f"Result vs {opponent_player.username}: {wins}/{total} wins ({win_rate:.1f}%) | "
         f"Avg Turns: {avg_turns:.1f} | HP Diff: {avg_hp_diff:+.2f} | Time: {elapsed:.1f}s"
     )
-    
+
     return {
         "wins": wins,
         "losses": losses,
@@ -89,7 +88,7 @@ async def run_full_evaluation(
     Updates metrics.json with structured evaluation results.
     """
     logger.info(f"Initializing Chronos evaluation for checkpoint: {checkpoint_path}")
-    
+
     chronos = ChronosPlayer(
         checkpoint_path=checkpoint_path,
         server_configuration=LocalhostServerConfiguration,
@@ -97,32 +96,28 @@ async def run_full_evaluation(
         search_time_budget=1.0,
         max_concurrent_battles=5,
     )
-    
+
     # 1. Weaker baseline for early training progress signal
     weaker_opponent = SimpleHeuristicsPlayer(
         server_configuration=LocalhostServerConfiguration,
         battle_format="gen9randombattle",
         max_concurrent_battles=5,
     )
-    
-    weaker_results = await evaluate_against_opponent(
-        chronos, weaker_opponent, num_battles=num_battles_weaker
-    )
-    
+
+    weaker_results = await evaluate_against_opponent(chronos, weaker_opponent, num_battles=num_battles_weaker)
+
     # Reset battle counts for primary benchmark
     chronos.reset_battles()
-    
+
     # 2. Primary expert heuristic benchmark (pmariglia's engine)
     primary_opponent = Player(
         server_configuration=LocalhostServerConfiguration,
         battle_format="gen9randombattle",
         max_concurrent_battles=5,
     )
-    
-    primary_results = await evaluate_against_opponent(
-        chronos, primary_opponent, num_battles=num_battles_primary
-    )
-    
+
+    primary_results = await evaluate_against_opponent(chronos, primary_opponent, num_battles=num_battles_primary)
+
     eval_summary = {
         "eval_timestamp": time.time(),
         "checkpoint": str(checkpoint_path.name),
@@ -133,7 +128,7 @@ async def run_full_evaluation(
         "weaker_baseline_avg_turns": weaker_results["avg_turns"],
         "weaker_baseline_hp_diff": weaker_results["avg_hp_diff"],
     }
-    
+
     if metrics_file and metrics_file.exists():
         try:
             with open(metrics_file, "r") as mf:
@@ -144,7 +139,7 @@ async def run_full_evaluation(
             logger.info(f"Evaluation metrics synced to {metrics_file}")
         except Exception as e:
             logger.warning(f"Could not update metrics file: {e}")
-            
+
     return eval_summary
 
 
@@ -158,7 +153,7 @@ def main():
 
     ckpt = Path(args.checkpoint)
     mf = Path(args.metrics_file) if args.metrics_file else None
-    
+
     asyncio.run(
         run_full_evaluation(
             checkpoint_path=ckpt,

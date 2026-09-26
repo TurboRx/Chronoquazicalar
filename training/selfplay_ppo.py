@@ -486,7 +486,16 @@ def train_ppo_selfplay(
         flat_inp = {k: jnp.concatenate([s[k] for s in buf_states_list], axis=0) for k in buf_states_list[0].keys()}
 
         params, opt_state, pol_l, val_l, ent, opp_l, za_pen = update_step(
-            params, opt_state, flat_inp, flat_acts, flat_log_p, flat_adv, flat_ret, flat_masks, flat_opp_acts, flat_opp_masks
+            params,
+            opt_state,
+            flat_inp,
+            flat_acts,
+            flat_log_p,
+            flat_adv,
+            flat_ret,
+            flat_masks,
+            flat_opp_acts,
+            flat_opp_masks,
         )
 
         # Snapshot current parameters into historical league pool periodically
