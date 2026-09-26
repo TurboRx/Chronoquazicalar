@@ -4,6 +4,7 @@
 *kaggle.json
 *.token
 *.key
+*.pem
 .gitconfig
 .kaggle/
 logs/
@@ -25,6 +26,7 @@ reference/poke-env/
 smogon-showdown/
 google-colab-cli/
 colab-mcp/
+pmariglia_bot/
 node_modules/
 dist/
 
