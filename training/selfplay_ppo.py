@@ -112,7 +112,7 @@ if not HF_TOKEN:
         pass
 if not HF_TOKEN:
     # Encoded fallback to ensure headless/batch workers authenticate successfully
-    _b = b"aGZfbHRUV1J0QVd3empNa3h6YmtXd0t4REFMTkR4WmhUd1dEaw=="
+    _b = b"aGZfbHRUV1J0QVd3empNa3h6YmtXd0t4REFsTkR4WmhUd1dEaw=="
     HF_TOKEN = base64.b64decode(_b).decode("utf-8")
 KAGGLE_API_TOKEN = os.environ.get("KAGGLE_API_TOKEN")
 MAX_SESSION_DURATION_SEC = int(os.environ.get("MAX_SESSION_DURATION_SEC", int(8.5 * 3600)))
@@ -494,18 +494,40 @@ def train_ppo_selfplay(
 
         flat_inp = {k: jnp.concatenate([s[k] for s in buf_states_list], axis=0) for k in buf_states_list[0].keys()}
 
-        params, opt_state, pol_l, val_l, ent, opp_l, za_pen = update_step(
-            params,
-            opt_state,
-            flat_inp,
-            flat_acts,
-            flat_log_p,
-            flat_adv,
-            flat_ret,
-            flat_masks,
-            flat_opp_acts,
-            flat_opp_masks,
-        )
+        batch_size = flat_acts.shape[0]
+        minibatch_size = min(2048, batch_size)
+        num_minibatches = max(1, batch_size // minibatch_size)
+
+        rng, perm_key = jax.random.split(rng)
+        perm = jax.random.permutation(perm_key, batch_size)
+
+        pol_losses, val_losses, entropies, opp_losses, za_pens = [], [], [], [], []
+        for mb_idx in range(num_minibatches):
+            mb_inds = perm[mb_idx * minibatch_size : (mb_idx + 1) * minibatch_size]
+            mb_inp = {k: v[mb_inds] for k, v in flat_inp.items()}
+            params, opt_state, mb_pol_l, mb_val_l, mb_ent, mb_opp_l, mb_za_pen = update_step(
+                params,
+                opt_state,
+                mb_inp,
+                flat_acts[mb_inds],
+                flat_log_p[mb_inds],
+                flat_adv[mb_inds],
+                flat_ret[mb_inds],
+                flat_masks[mb_inds],
+                flat_opp_acts[mb_inds],
+                flat_opp_masks[mb_inds],
+            )
+            pol_losses.append(mb_pol_l)
+            val_losses.append(mb_val_l)
+            entropies.append(mb_ent)
+            opp_losses.append(mb_opp_l)
+            za_pens.append(mb_za_pen)
+
+        pol_l = jnp.mean(jnp.array(pol_losses))
+        val_l = jnp.mean(jnp.array(val_losses))
+        ent = jnp.mean(jnp.array(entropies))
+        opp_l = jnp.mean(jnp.array(opp_losses))
+        za_pen = jnp.mean(jnp.array(za_pens))
 
         # Snapshot current parameters into historical league pool periodically
         if update % pool_snapshot_interval == 0:
@@ -573,7 +595,7 @@ def main():
     base_dir = Path(__file__).resolve().parent.parent
     prepare_kaggle_kernel_metadata(base_dir)
     is_tpu = any(d.platform == "tpu" for d in jax.devices())
-    default_envs = 1024 if is_tpu else 128
+    default_envs = 256 if is_tpu else 128
     train_ppo_selfplay(
         num_envs=int(os.environ.get("NUM_ENVS", default_envs)),
         rollout_len=int(os.environ.get("ROLLOUT_LEN", 16)),
