@@ -1,7 +1,7 @@
 [project]
-name = "chronos-randbats"
+name = "chronoquazicalar"
 version = "0.1.0"
-description = "Project Chronos: Autonomous Pokémon Showdown Gen 9 Random Battles Engine and Training Pipeline"
+description = "Project Chronoquazicalar: Autonomous Pokémon Showdown Gen 9 Random Battles Engine and Training Pipeline"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

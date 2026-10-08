@@ -1,4 +1,4 @@
-# Chronos
+# Chronoquazicalar
 
 High-performance reinforcement learning system and game-theoretic search engine for Pokémon Showdown Gen 9 Random Battles.
 
@@ -6,9 +6,9 @@ High-performance reinforcement learning system and game-theoretic search engine 
 
 ## Overview
 
-Chronos integrates a tensor-native JAX battle simulator, a 9.65M-parameter non-causal Transformer policy/value network, simultaneous-move Counterfactual Regret Minimization (CFR) with polynomial Upper Confidence Trees (pUCT), and Bayesian set inference over official Pokémon Showdown Gen 9 distributions.
+Chronoquazicalar integrates a tensor-native JAX battle simulator, a 9.65M-parameter non-causal Transformer policy/value network, simultaneous-move Counterfactual Regret Minimization (CFR) with polynomial Upper Confidence Trees (pUCT), and Bayesian set inference over official Pokémon Showdown Gen 9 distributions.
 
-Pretrained model checkpoints and training metrics are hosted publicly on Hugging Face: [TurboRx/chronos-randbats](https://huggingface.co/TurboRx/chronos-randbats).
+Pretrained model checkpoints and training metrics are hosted publicly on Hugging Face: [TurboRx/Chronoquazicalar](https://huggingface.co/TurboRx/Chronoquazicalar).
 
 ---
 
@@ -94,8 +94,8 @@ Pretrained model checkpoints and training metrics are hosted publicly on Hugging
 * NumPy, SciPy
 
 ```bash
-git clone https://github.com/TurboRx/chronos-randbats.git
-cd chronos-randbats
+git clone https://github.com/TurboRx/Chronoquazicalar.git
+cd Chronoquazicalar
 pip install -r requirements.txt
 ```
 
