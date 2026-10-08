@@ -13,7 +13,7 @@ REFRESH_TOKEN = os.environ.get("COLAB_REFRESH_TOKEN", "")
 ENDPOINT = os.environ.get("COLAB_ENDPOINT", "")
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
 HF_METRICS_URL = os.environ.get(
-    "HF_METRICS_URL", "https://huggingface.co/TurboRx/chronos-randbats/raw/main/metrics.json"
+    "HF_METRICS_URL", "https://huggingface.co/TurboRx/Chronoquazicalar/raw/main/metrics.json"
 )
 LOG_FILE = os.path.expanduser("~/colab_relay.log")
 

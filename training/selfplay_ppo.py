@@ -95,7 +95,7 @@ class RolloutBuffer(NamedTuple):
     valid_masks: jnp.ndarray
 
 
-HF_REPO_ID = "TurboRx/chronos-randbats"
+HF_REPO_ID = "TurboRx/Chronoquazicalar"
 HF_TOKEN = os.environ.get("HF_TOKEN")
 if not HF_TOKEN:
     try:

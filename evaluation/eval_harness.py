@@ -25,7 +25,7 @@ from bot_client import ChronosPlayer
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s - %(message)s")
 logger = logging.getLogger("EvalHarness")
 
-HF_REPO_ID = "TurboRx/chronos-randbats"
+HF_REPO_ID = "TurboRx/Chronoquazicalar"
 HF_TOKEN = os.environ.get("HF_TOKEN")
 
 
