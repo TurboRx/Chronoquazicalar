@@ -1,0 +1,29 @@
+[project]
+name = "chronos-randbats"
+version = "0.1.0"
+description = "Project Chronos: Autonomous Pokémon Showdown Gen 9 Random Battles Engine and Training Pipeline"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "jax",
+    "jaxlib",
+    "flax",
+    "optax",
+    "poke-env",
+    "kaggle",
+    "huggingface_hub",
+    "requests",
+    "numpy",
+    "scipy",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"training/selfplay_ppo.py" = ["E402", "F811"]
